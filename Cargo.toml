@@ -1,0 +1,15 @@
+[package]
+name = "Umbra"
+version = "0.0.1"
+edition = "2024"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[[bin]]
+name = "Umbra"
+test = false
+bench = false
