@@ -12,9 +12,20 @@ use core::panic::PanicInfo;
 use umbra::memory;
 use umbra::memory::BootInfoFrameAllocator;
 use umbra::println;
+use umbra::task::keyboard;
+use umbra::task::{Task, executor::Executor};
 use x86_64::VirtAddr;
 
 entry_point!(kernel_main);
+
+async fn async_number() -> u32 {
+    42
+}
+
+async fn example_task() {
+    let number = async_number().await;
+    println!("async number: {}", number);
+}
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // start
@@ -60,8 +71,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
-    println!("It didn't crash!");
-    umbra::hlt_loop();
+    let mut executor = Executor::new();
+    executor.spawn(Task::new(example_task()));
+    executor.spawn(Task::new(keyboard::print_keypresses()));
+    executor.run();
 }
 
 // This function is called on panic (yes, I'm even copying the comments)
