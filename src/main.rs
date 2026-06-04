@@ -16,6 +16,8 @@ pub extern "C" fn _start() -> ! {
 
     println!("Fieletowy!");
 
+    umbra::init();
+
     #[cfg(test)]
     test_main();
 
