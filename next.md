@@ -3,5 +3,4 @@
   - [x] Syscalls
   - [x] Shell (kinda)
 - [x] Framebuffer
-- [ ] ZFS
-- [ ] FAT32
+- [ ] Disk

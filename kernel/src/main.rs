@@ -46,9 +46,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::framebuffer::init(framebuffer.buffer_mut(), info);
     umbra::serial_println!("[kernel] framebuffer initialized");
 
-    println!("Hello World{}", "!");
-    umbra::serial_println!("[kernel] println done");
-
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
 
     umbra::init();
@@ -65,6 +62,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::acpi::init(phys_mem_offset.as_u64());
     umbra::serial_println!("[kernel] acpi initialized");
     umbra::syscall::init();
+    umbra::task::keyboard::ScancodeStream::init_scancode_queue();
 
     // Load userspace shell
     let ramdisk_addr = boot_info

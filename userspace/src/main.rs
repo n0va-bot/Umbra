@@ -51,9 +51,144 @@ macro_rules! println {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    println!("Hello from Ring 3!");
-    println!("The userspace shell is alive!");
-    loop {}
+    print!("> ");
+
+    let mut keyboard = pc_keyboard::Keyboard::new(
+        pc_keyboard::ScancodeSet1::new(),
+        pc_keyboard::layouts::Us104Key,
+        pc_keyboard::HandleControl::Ignore,
+    );
+
+    let mut buffer = [0u8; 128];
+    let mut len = 0;
+
+    let mut cursor_visible = false;
+    let mut last_blink = unsafe { syscall(3, 0, 0, 0, 0, 0) };
+
+    loop {
+        let scancode = unsafe { syscall(1, 0, 0, 0, 0, 0) };
+        if scancode != core::u64::MAX {
+            if cursor_visible {
+                print!("\u{8}");
+                cursor_visible = false;
+            }
+
+            if let Ok(Some(key_event)) = keyboard.add_byte(scancode as u8) {
+                if let Some(key) = keyboard.process_keyevent(key_event) {
+                    match key {
+                        pc_keyboard::DecodedKey::Unicode(character) => match character {
+                            '\n' => {
+                                println!();
+                                if let Ok(s) = core::str::from_utf8(&buffer[..len]) {
+                                    process_command(s);
+                                }
+                                len = 0;
+                                print!("> ");
+                            }
+                            '\u{8}' | '\x7f' => {
+                                if len > 0 {
+                                    len -= 1;
+                                    print!("\u{8}");
+                                }
+                            }
+                            c if c.is_ascii_graphic() || c == ' ' => {
+                                if len < buffer.len() {
+                                    let mut buf = [0; 4];
+                                    let s = c.encode_utf8(&mut buf);
+                                    if len + s.len() <= buffer.len() {
+                                        for b in s.bytes() {
+                                            buffer[len] = b;
+                                            len += 1;
+                                        }
+                                        print!("{}", c);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        },
+                        pc_keyboard::DecodedKey::RawKey(key) => match key {
+                            pc_keyboard::KeyCode::Backspace => {
+                                if len > 0 {
+                                    len -= 1;
+                                    print!("\u{8}");
+                                }
+                            }
+                            _ => {}
+                        },
+                    }
+                }
+            }
+            last_blink = unsafe { syscall(3, 0, 0, 0, 0, 0) };
+        } else {
+            let now = unsafe { syscall(3, 0, 0, 0, 0, 0) };
+            if now.wrapping_sub(last_blink) >= 9 {
+                if cursor_visible {
+                    print!("\u{8}");
+                } else {
+                    print!("_");
+                }
+                cursor_visible = !cursor_visible;
+                last_blink = now;
+            }
+            core::hint::spin_loop();
+        }
+    }
+}
+
+fn process_command(cmd: &str) {
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        return;
+    }
+
+    let mut parts = cmd.split_whitespace();
+    let command = parts.next().unwrap_or("");
+
+    match command {
+        "help" => {
+            println!("Available commands:");
+            println!("  help     - Show this help message");
+            println!("  echo     - Print the arguments");
+            println!("  clear    - Clear the screen");
+            println!("  poweroff - Shutdown the system");
+            println!("  date     - Print the current date and time");
+            println!("  lspci    - List all PCI devices");
+        }
+        "echo" => {
+            let rest = cmd["echo".len()..].trim();
+            println!("{}", rest);
+        }
+        "clear" => {
+            unsafe { syscall(2, 0, 0, 0, 0, 0) };
+        }
+        "poweroff" => {
+            unsafe { syscall(4, 0, 0, 0, 0, 0) };
+        }
+        "date" => {
+            let packed = unsafe { syscall(5, 0, 0, 0, 0, 0) };
+            let year = packed & 0xFF;
+            let month = (packed >> 8) & 0xFF;
+            let day = (packed >> 16) & 0xFF;
+            let hours = (packed >> 24) & 0xFF;
+            let minutes = (packed >> 32) & 0xFF;
+            let seconds = (packed >> 40) & 0xFF;
+            println!(
+                "{:02}:{:02}:{:02} {:04}-{:02}-{:02}",
+                hours,
+                minutes,
+                seconds,
+                2000 + (year as u16),
+                month,
+                day
+            );
+        }
+        "lspci" => {
+            unsafe { syscall(6, 0, 0, 0, 0, 0) };
+        }
+        _ => {
+            println!("Unknown command: {}", command);
+        }
+    }
 }
 
 #[panic_handler]

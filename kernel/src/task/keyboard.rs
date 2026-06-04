@@ -9,7 +9,7 @@ use futures_util::stream::StreamExt;
 use futures_util::task::AtomicWaker;
 use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 
-static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
+pub(crate) static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
 
 pub(crate) fn add_scancode(scancode: u8) {
@@ -30,10 +30,14 @@ pub struct ScancodeStream {
 
 impl ScancodeStream {
     pub fn new() -> Self {
+        Self::init_scancode_queue();
+        ScancodeStream { _private: () }
+    }
+
+    pub fn init_scancode_queue() {
         SCANCODE_QUEUE
             .try_init_once(|| ArrayQueue::new(100))
-            .expect("ScancodeStream::new should only be called once");
-        ScancodeStream { _private: () }
+            .expect("ScancodeStream::init_scancode_queue should only be called once");
     }
 }
 

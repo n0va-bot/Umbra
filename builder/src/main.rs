@@ -64,8 +64,8 @@ fn main() {
 
     println!("Creating BIOS disk image...");
     let mut boot_config = bootloader::BootConfig::default();
-    boot_config.frame_buffer.minimum_framebuffer_width = Some(800);
-    boot_config.frame_buffer.minimum_framebuffer_height = Some(600);
+    boot_config.frame_buffer.minimum_framebuffer_width = Some(640);
+    boot_config.frame_buffer.minimum_framebuffer_height = Some(480);
 
     let mut bios_boot = bootloader::BiosBoot::new(&stripped_kernel);
     bios_boot.set_boot_config(&boot_config);
@@ -81,6 +81,8 @@ fn main() {
         .arg("-drive")
         .arg(format!("format=raw,file={}", bios_image.display()))
         .arg("-enable-kvm")
+        .arg("-display")
+        .arg("gtk,zoom-to-fit=on")
         .status()
         .expect("Failed to run QEMU");
 
