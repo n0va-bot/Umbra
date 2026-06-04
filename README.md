@@ -42,6 +42,4 @@ Umbra is a Unix-like (in some parts) operating system that aims to be ACTUALLY A
 
 Stuff like that
 
-### 3. As-good-as-ill-manage-to Linux, GNU, maybe even BSD, compatibility
-
-Of course, I'm following [Philipp Oppermann's OS development tutorial](https://os.phil-opp.com/)
+### 3. Linux container with GUI support
