@@ -42,6 +42,35 @@ pub fn _print(args: fmt::Arguments) {
     });
 }
 
+pub fn backspace() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        WRITER.lock().backspace();
+    });
+}
+
+pub fn clear_screen() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        WRITER.lock().clear_screen();
+    });
+}
+
+pub fn enable_cursor() {
+    use x86_64::instructions::port::Port;
+    let mut port_3d4: Port<u8> = Port::new(0x3D4);
+    let mut port_3d5: Port<u8> = Port::new(0x3D5);
+    unsafe {
+        port_3d4.write(0x0A);
+        let start = port_3d5.read();
+        port_3d5.write((start & 0xC0) | 14);
+
+        port_3d4.write(0x0B);
+        let end = port_3d5.read();
+        port_3d5.write((end & 0xE0) | 15);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 
@@ -72,6 +101,7 @@ struct Buffer {
 
 pub struct Writer {
     column_position: usize,
+    row_position: usize,
     color_code: ColourCode,
     buffer: &'static mut Buffer,
 }
@@ -85,7 +115,7 @@ impl Writer {
                     self.new_line();
                 }
 
-                let row = BUFFER_HEIGHT - 1;
+                let row = self.row_position;
                 let col = self.column_position;
 
                 let color_code = self.color_code;
@@ -99,13 +129,17 @@ impl Writer {
     }
 
     fn new_line(&mut self) {
-        for row in 1..BUFFER_HEIGHT {
-            for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
+        if self.row_position < BUFFER_HEIGHT - 1 {
+            self.row_position += 1;
+        } else {
+            for row in 1..BUFFER_HEIGHT {
+                for col in 0..BUFFER_WIDTH {
+                    let character = self.buffer.chars[row][col].read();
+                    self.buffer.chars[row - 1][col].write(character);
+                }
             }
+            self.clear_row(BUFFER_HEIGHT - 1);
         }
-        self.clear_row(BUFFER_HEIGHT - 1);
         self.column_position = 0;
     }
 
@@ -126,6 +160,49 @@ impl Writer {
                 _ => self.write_byte(0xfe),
             }
         }
+        self.update_cursor();
+    }
+
+    pub fn backspace(&mut self) {
+        if self.column_position > 0 {
+            self.column_position -= 1;
+            let row = self.row_position;
+            let col = self.column_position;
+            let blank = ScreenChar {
+                ascii_character: b' ',
+                color_code: self.color_code,
+            };
+            self.buffer.chars[row][col].write(blank);
+            self.update_cursor();
+        }
+    }
+
+    pub fn clear_screen(&mut self) {
+        let blank = ScreenChar {
+            ascii_character: b' ',
+            color_code: self.color_code,
+        };
+        for row in 0..BUFFER_HEIGHT {
+            for col in 0..BUFFER_WIDTH {
+                self.buffer.chars[row][col].write(blank);
+            }
+        }
+        self.column_position = 0;
+        self.row_position = 0;
+        self.update_cursor();
+    }
+
+    fn update_cursor(&self) {
+        use x86_64::instructions::port::Port;
+        let pos = self.row_position * BUFFER_WIDTH + self.column_position;
+        let mut port_3d4 = Port::new(0x3D4);
+        let mut port_3d5 = Port::new(0x3D5);
+        unsafe {
+            port_3d4.write(0x0E_u8);
+            port_3d5.write(((pos >> 8) & 0xFF) as u8);
+            port_3d4.write(0x0F_u8);
+            port_3d5.write((pos & 0xFF) as u8);
+        }
     }
 }
 
@@ -144,6 +221,7 @@ use spin::Mutex;
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
+        row_position: 0,
         color_code: ColourCode::new(Colour::Pink, Colour::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
@@ -159,7 +237,8 @@ fn test_println_output() {
         let mut writer = WRITER.lock();
         writeln!(writer, "\n{}", s).expect("writeln failed");
         for (i, c) in s.chars().enumerate() {
-            let screen_char = writer.buffer.chars[BUFFER_HEIGHT - 2][i].read();
+            let row = writer.row_position - 2;
+            let screen_char = writer.buffer.chars[row][i].read();
             assert_eq!(char::from(screen_char.ascii_character), c);
         }
     });

@@ -7,7 +7,7 @@ use crossbeam_queue::ArrayQueue;
 use futures_util::stream::Stream;
 use futures_util::stream::StreamExt;
 use futures_util::task::AtomicWaker;
-use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
@@ -60,7 +60,7 @@ impl Stream for ScancodeStream {
     }
 }
 
-pub async fn print_keypresses() {
+pub async fn run_shell() {
     let mut scancodes = ScancodeStream::new();
     let mut keyboard = Keyboard::new(
         ScancodeSet1::new(),
@@ -68,14 +68,69 @@ pub async fn print_keypresses() {
         HandleControl::Ignore,
     );
 
+    let mut buffer = alloc::string::String::new();
+
     while let Some(scancode) = scancodes.next().await {
         if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
             if let Some(key) = keyboard.process_keyevent(key_event) {
                 match key {
-                    DecodedKey::Unicode(character) => print!("{}", character),
-                    DecodedKey::RawKey(key) => print!("{:?}", key),
+                    DecodedKey::Unicode(character) => match character {
+                        '\n' => {
+                            println!();
+                            process_command(&buffer);
+                            buffer.clear();
+                            print!("> ");
+                        }
+                        '\u{8}' | '\x7f' => {
+                            if buffer.pop().is_some() {
+                                crate::vga_buffer::backspace();
+                            }
+                        }
+                        c if c.is_ascii_graphic() || c == ' ' => {
+                            buffer.push(c);
+                            print!("{}", c);
+                        }
+                        _ => {}
+                    },
+                    DecodedKey::RawKey(key) => match key {
+                        pc_keyboard::KeyCode::Backspace => {
+                            if buffer.pop().is_some() {
+                                crate::vga_buffer::backspace();
+                            }
+                        }
+                        _ => {}
+                    },
                 }
             }
+        }
+    }
+}
+
+fn process_command(cmd: &str) {
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        return;
+    }
+
+    let mut parts = cmd.split_whitespace();
+    let command = parts.next().unwrap_or("");
+
+    match command {
+        "help" => {
+            println!("Available commands:");
+            println!("  help  - Show this help message");
+            println!("  echo  - Print the arguments");
+            println!("  clear - Clear the screen");
+        }
+        "echo" => {
+            let rest = cmd["echo".len()..].trim();
+            println!("{}", rest);
+        }
+        "clear" => {
+            crate::vga_buffer::clear_screen();
+        }
+        _ => {
+            println!("Unknown command: {}", command);
         }
     }
 }
