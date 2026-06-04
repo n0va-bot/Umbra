@@ -122,7 +122,8 @@ fn process_command(cmd: &str) {
             println!("  echo     - Print the arguments");
             println!("  clear    - Clear the screen");
             println!("  poweroff - Shutdown the system");
-            println!("  date     - Print the current date and time")
+            println!("  date     - Print the current date and time");
+            println!("  lspci    - List all PCI devices");
         }
         "echo" => {
             let rest = cmd["echo".len()..].trim();
@@ -146,6 +147,9 @@ fn process_command(cmd: &str) {
                 month,
                 day
             );
+        }
+        "lspci" => {
+            crate::pci::scan_buses();
         }
         _ => {
             println!("Unknown command: {}", command);
