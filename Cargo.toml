@@ -1,5 +1,5 @@
 [package]
-name = "Umbra"
+name = "umbra"
 version = "0.0.1"
 edition = "2024"
 
@@ -10,6 +10,9 @@ panic = "abort"
 panic = "abort"
 
 [[bin]]
-name = "Umbra"
+name = "umbra"
 test = false
 bench = false
+
+[dependencies]
+bootloader = "0.9"
