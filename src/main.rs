@@ -21,7 +21,7 @@ pub extern "C" fn _start() -> ! {
     #[cfg(test)]
     test_main();
 
-    loop {}
+    umbra::hlt_loop();
 }
 
 // This function is called on panic (yes, I'm even copying the comments)
@@ -29,7 +29,7 @@ pub extern "C" fn _start() -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
-    loop {}
+    umbra::hlt_loop();
 }
 
 #[cfg(test)]
