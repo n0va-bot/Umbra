@@ -118,9 +118,10 @@ fn process_command(cmd: &str) {
     match command {
         "help" => {
             println!("Available commands:");
-            println!("  help  - Show this help message");
-            println!("  echo  - Print the arguments");
-            println!("  clear - Clear the screen");
+            println!("  help     - Show this help message");
+            println!("  echo     - Print the arguments");
+            println!("  clear    - Clear the screen");
+            println!("  poweroff - Shutdown the system");
         }
         "echo" => {
             let rest = cmd["echo".len()..].trim();
@@ -128,6 +129,9 @@ fn process_command(cmd: &str) {
         }
         "clear" => {
             crate::vga_buffer::clear_screen();
+        }
+        "poweroff" => {
+            crate::acpi::power_off();
         }
         _ => {
             println!("Unknown command: {}", command);

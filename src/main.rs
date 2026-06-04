@@ -32,6 +32,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     umbra::allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("heap initialization failed");
 
+    umbra::acpi::init(boot_info.physical_memory_offset);
+
     #[cfg(test)]
     test_main();
 
