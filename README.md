@@ -1,17 +1,19 @@
-> [!WARNING]
-> This is a hobby/learning project. It will probably be renamed, recreated 100s of times, have thousands of branches and look less sane than Terry Davis
+> [!WARNING] This is a hobby/learning project. It will probably be renamed, recreated 100s of times, have thousands of branches and look less sane than Terry Davis
 
 # Umbra
+
 (yes, I know, edgy af)
 
-> [!WARNING]
-> In this project I will be learning
+> [!WARNING] In this project I will be learning
+>
 > - OS dev
 > - Possibly Rust
 > - Probably everything else
 
 > [!WARNING]
+>
 > # FINAL DISCLAIMER
+>
 > Do **NOT** learn from this
 
 Okay, now that we're done with the disclaimers...
@@ -23,7 +25,8 @@ Umbra is a Unix-like (in some parts) operating system that aims to be ACTUALLY A
 ## Core principles/whatvere
 
 ### 1. Microkernel
-### 2. *USABLE* FSH
+
+### 2. _USABLE_ FSH
 
 ```
 /
