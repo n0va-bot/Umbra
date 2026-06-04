@@ -18,6 +18,7 @@ pub mod memory;
 pub mod pci;
 pub mod serial;
 pub mod task;
+pub mod userspace;
 pub mod vga_buffer;
 
 pub fn init() {

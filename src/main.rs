@@ -14,6 +14,7 @@ use umbra::task::keyboard;
 use umbra::task::{Task, executor::Executor};
 use umbra::{print, println};
 use x86_64::VirtAddr;
+use x86_64::structures::paging::FrameAllocator;
 
 entry_point!(kernel_main);
 
@@ -34,15 +35,49 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     umbra::acpi::init(boot_info.physical_memory_offset);
 
+    unsafe {
+        use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
+
+        let code_page = Page::containing_address(VirtAddr::new(0x4444_0000_0000));
+        let code_frame = frame_allocator.allocate_frame().unwrap();
+        let flags =
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+
+        mapper
+            .map_to(code_page, code_frame, flags, &mut frame_allocator)
+            .expect("map_to failed")
+            .flush();
+
+        let code_ptr = code_page.start_address().as_mut_ptr::<u16>();
+        code_ptr.write(0xFEEB);
+
+        let stack_page = Page::containing_address(VirtAddr::new(0x4444_0000_1000));
+        let stack_frame = frame_allocator.allocate_frame().unwrap();
+
+        mapper
+            .map_to(stack_page, stack_frame, flags, &mut frame_allocator)
+            .expect("map_to failed")
+            .flush();
+
+        // Jump to Ring 3
+        let ip = code_page.start_address().as_u64();
+        let stack_ptr = stack_page.start_address().as_u64() + 4096;
+        let code_sel = umbra::gdt::get_user_code_selector().0 as u64;
+        let data_sel = umbra::gdt::get_user_data_selector().0 as u64;
+
+        umbra::userspace::enter_user_mode(ip, stack_ptr, code_sel, data_sel);
+    }
+
     #[cfg(test)]
     test_main();
 
-    let mut executor = Executor::new();
-    umbra::vga_buffer::clear_screen();
-    umbra::vga_buffer::enable_cursor();
-    print!("> ");
-    executor.spawn(Task::new(keyboard::run_shell()));
-    executor.run();
+    // TODO: restore once we return from userspace via syscall
+    // let mut executor = Executor::new();
+    // umbra::vga_buffer::clear_screen();
+    // umbra::vga_buffer::enable_cursor();
+    // print!("> ");
+    // executor.spawn(Task::new(keyboard::run_shell()));
+    // executor.run();
 }
 
 // This function is called on panic (yes, I'm even copying the comments)

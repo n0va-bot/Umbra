@@ -18,6 +18,13 @@ lazy_static! {
             let stack_end = stack_start + STACK_SIZE as u64;
             stack_end
         };
+        tss.privilege_stack_table[0] = {
+            const STACK_SIZE: usize = 4096 * 5;
+            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(STACK));
+            stack_start + STACK_SIZE as u64
+        };
+
         tss
     };
 }
@@ -27,11 +34,15 @@ lazy_static! {
         let mut gdt = GlobalDescriptorTable::new();
         let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
         let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
+        let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
+        let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
         (
             gdt,
             Selectors {
                 code_selector,
                 tss_selector,
+                user_code_selector,
+                user_data_selector,
             },
         )
     };
@@ -40,6 +51,8 @@ lazy_static! {
 struct Selectors {
     code_selector: SegmentSelector,
     tss_selector: SegmentSelector,
+    user_code_selector: SegmentSelector,
+    user_data_selector: SegmentSelector,
 }
 
 pub fn init() {
@@ -48,4 +61,12 @@ pub fn init() {
         CS::set_reg(GDT.1.code_selector);
         load_tss(GDT.1.tss_selector);
     }
+}
+
+pub fn get_user_code_selector() -> SegmentSelector {
+    GDT.1.user_code_selector
+}
+
+pub fn get_user_data_selector() -> SegmentSelector {
+    GDT.1.user_data_selector
 }
