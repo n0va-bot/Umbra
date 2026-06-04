@@ -83,7 +83,7 @@ pub async fn run_shell() {
                         }
                         '\u{8}' | '\x7f' => {
                             if buffer.pop().is_some() {
-                                crate::vga_buffer::backspace();
+                                crate::framebuffer::backspace();
                             }
                         }
                         c if c.is_ascii_graphic() || c == ' ' => {
@@ -95,7 +95,7 @@ pub async fn run_shell() {
                     DecodedKey::RawKey(key) => match key {
                         pc_keyboard::KeyCode::Backspace => {
                             if buffer.pop().is_some() {
-                                crate::vga_buffer::backspace();
+                                crate::framebuffer::backspace();
                             }
                         }
                         _ => {}
@@ -130,7 +130,7 @@ fn process_command(cmd: &str) {
             println!("{}", rest);
         }
         "clear" => {
-            crate::vga_buffer::clear_screen();
+            crate::framebuffer::clear_screen();
         }
         "poweroff" => {
             crate::acpi::power_off();

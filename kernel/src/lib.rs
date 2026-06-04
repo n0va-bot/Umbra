@@ -13,6 +13,7 @@ pub mod acpi;
 pub mod allocator;
 pub mod cmos;
 pub mod elf_loader;
+pub mod framebuffer;
 pub mod gdt;
 pub mod interrupts;
 pub mod memory;
@@ -21,7 +22,6 @@ pub mod serial;
 pub mod syscall;
 pub mod task;
 pub mod userspace;
-pub mod vga_buffer;
 
 pub fn init() {
     gdt::init();
@@ -74,13 +74,22 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 #[cfg(test)]
-use bootloader::{BootInfo, entry_point};
+use bootloader_api::config::{BootloaderConfig, Mapping};
+#[cfg(test)]
+use bootloader_api::{BootInfo, entry_point};
 
 #[cfg(test)]
-entry_point!(test_kernel_main);
+pub static BOOTLOADER_CONFIG: BootloaderConfig = {
+    let mut config = BootloaderConfig::new_default();
+    config.mappings.physical_memory = Some(Mapping::Dynamic);
+    config
+};
 
 #[cfg(test)]
-fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
+entry_point!(test_kernel_main, config = &BOOTLOADER_CONFIG);
+
+#[cfg(test)]
+fn test_kernel_main(_boot_info: &'static mut BootInfo) -> ! {
     init();
     test_main();
     hlt_loop();

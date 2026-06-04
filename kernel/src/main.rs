@@ -6,7 +6,14 @@
 
 extern crate alloc;
 
-use bootloader::{BootInfo, entry_point};
+use bootloader_api::config::{BootloaderConfig, Mapping};
+use bootloader_api::{BootInfo, entry_point};
+
+pub static BOOTLOADER_CONFIG: BootloaderConfig = {
+    let mut config = BootloaderConfig::new_default();
+    config.mappings.physical_memory = Some(Mapping::Dynamic);
+    config
+};
 use core::panic::PanicInfo;
 use umbra::elf_loader::load_elf;
 use umbra::memory;
@@ -17,24 +24,46 @@ use umbra::{print, println};
 use x86_64::VirtAddr;
 use x86_64::structures::paging::FrameAllocator;
 
-entry_point!(kernel_main);
+entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
-fn kernel_main(boot_info: &'static BootInfo) -> ! {
+fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // start
     // What start does everyone sees
     // (start, co robi, każdy widzi)
     // (koń, jaki jest, każdy widzi)
 
-    umbra::init();
+    umbra::serial_println!("[kernel] entered kernel_main");
 
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let framebuffer = boot_info.framebuffer.as_mut().unwrap();
+    let info = framebuffer.info();
+    umbra::serial_println!(
+        "[kernel] framebuffer: {}x{}, {:?}, bpp={}",
+        info.width,
+        info.height,
+        info.pixel_format,
+        info.bytes_per_pixel
+    );
+    umbra::framebuffer::init(framebuffer.buffer_mut(), info);
+    umbra::serial_println!("[kernel] framebuffer initialized");
+
+    println!("Hello World{}", "!");
+    umbra::serial_println!("[kernel] println done");
+
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
+
+    umbra::init();
+    umbra::serial_println!("[kernel] init done");
+
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
-    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    let mut frame_allocator =
+        unsafe { BootInfoFrameAllocator::init(&mut boot_info.memory_regions) };
 
     umbra::allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("heap initialization failed");
+    umbra::serial_println!("[kernel] heap initialized");
 
-    umbra::acpi::init(boot_info.physical_memory_offset);
+    umbra::acpi::init(phys_mem_offset.as_u64());
+    umbra::serial_println!("[kernel] acpi initialized");
     umbra::syscall::init();
 
     // Load userspace shell
@@ -42,7 +71,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     struct Aligned<T: ?Sized>(T);
 
     static SHELL_ELF: &Aligned<[u8]> = &Aligned(*include_bytes!(
-        "../userspace/target/x86_64-unknown-none/debug/userspace"
+        "../../userspace/target/x86_64-unknown-none/debug/userspace"
     ));
 
     let entry_point = umbra::elf_loader::load_elf(&SHELL_ELF.0, &mut mapper, &mut frame_allocator);
@@ -84,6 +113,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    umbra::serial_println!("[PANIC] {}", info);
     println!("{}", info);
     umbra::hlt_loop();
 }

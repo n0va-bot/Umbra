@@ -2,7 +2,7 @@
 
 ## Project
 
-x86_64 hobby OS kernel (microkernel, following Philipp Oppermann's tutorial). **no_std, no_main, nightly Rust.** Single crate, single binary.
+x86_64 hobby OS kernel (microkernel, following Philipp Oppermann's tutorial). **no_std, no_main, nightly Rust.** Cargo Workspace containing the kernel, userspace shell, and builder.
 
 ## Toolchain
 
@@ -18,11 +18,10 @@ x86_64 hobby OS kernel (microkernel, following Philipp Oppermann's tutorial). **
 
 | Command | What it does |
 | --- | --- |
-| `cargo bootimage` | Produces `target/x86_64-umbra/debug/bootimage-umbra.bin` (bootable disk image) |
-| `cargo run` | Builds + launches in QEMU via `bootimage runner` |
+| `cargo run` | Builds the kernel and launches in QEMU via the custom `builder` package |
 | `cargo check` | Works (only type-checks, no linker needed) |
 
-The `.cargo/config.toml` sets `target = "x86_64-umbra.json"` (custom target spec) and uses `build-std = ["core", "compiler_builtins", "alloc"]`.
+The project uses a custom `builder` package to compile the kernel into a UEFI/BIOS disk image using `bootloader` 0.11, rather than `bootimage`.
 
 ## Testing
 

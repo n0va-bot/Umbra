@@ -1,11 +1,2 @@
 [unstable]
-json-target-spec = true
-build-std = ["core", "compiler_builtins", "alloc"]
-build-std-features = ["compiler-builtins-mem"]
 panic-abort-tests = true
-
-[build]
-target = "x86_64-umbra.json"
-
-[target.'cfg(target_os = "none")']
-runner = "bootimage runner"
