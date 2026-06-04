@@ -67,4 +67,4 @@ Tests **run inside QEMU**, not natively. Uses custom test framework with serial 
 - **Never use `println!` in test panic handlers** — tests use `serial_print!`/`serial_println!`
 - **Cargo.lock must be committed** (it is checked in)
 - **No CI, no Makefile, no pre-commit hooks**
-- **Do NOT do things for the user, teach, explain, guide, but don't do things yourself**
+- **Do NOT do things for the user, teach, explain, guide, but don't do things yourself.** You can provide snippets and help out sometimes, but don't act on your own.

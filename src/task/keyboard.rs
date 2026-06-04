@@ -122,6 +122,7 @@ fn process_command(cmd: &str) {
             println!("  echo     - Print the arguments");
             println!("  clear    - Clear the screen");
             println!("  poweroff - Shutdown the system");
+            println!("  date     - Print the current date and time")
         }
         "echo" => {
             let rest = cmd["echo".len()..].trim();
@@ -132,6 +133,19 @@ fn process_command(cmd: &str) {
         }
         "poweroff" => {
             crate::acpi::power_off();
+        }
+        "date" => {
+            let mut cmos = crate::cmos::Cmos::new();
+            let (year, month, day, hours, minutes, seconds) = cmos.read_time();
+            println!(
+                "{:02}:{:02}:{:02} {:04}-{:02}-{:02}",
+                hours,
+                minutes,
+                seconds,
+                2000 + (year as u16),
+                month,
+                day
+            );
         }
         _ => {
             println!("Unknown command: {}", command);
