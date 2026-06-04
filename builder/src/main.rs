@@ -26,6 +26,24 @@ fn main() {
         std::process::exit(1);
     }
 
+    println!("Building userspace...");
+    let userspace_dir = workspace_root.join("userspace");
+    let userspace_binary = workspace_root
+        .join("target")
+        .join("x86_64-unknown-none")
+        .join("debug")
+        .join("userspace");
+
+    let status = Command::new("cargo")
+        .arg("build")
+        .current_dir(&userspace_dir)
+        .status()
+        .expect("Failed to run cargo build for userspace");
+
+    if !status.success() {
+        std::process::exit(1);
+    }
+
     println!("Creating BIOS disk image...");
     let mut boot_config = bootloader::BootConfig::default();
     boot_config.frame_buffer.minimum_framebuffer_width = Some(800);
@@ -33,6 +51,7 @@ fn main() {
 
     let mut bios_boot = bootloader::BiosBoot::new(&kernel_binary);
     bios_boot.set_boot_config(&boot_config);
+    bios_boot.set_ramdisk(&userspace_binary);
     bios_boot
         .create_disk_image(&bios_image)
         .expect("Failed to create BIOS disk image");

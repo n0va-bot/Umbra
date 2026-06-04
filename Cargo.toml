@@ -11,3 +11,7 @@ panic = "abort"
 
 [profile.test]
 panic = "abort"
+
+[profile.dev.package.userspace]
+strip = "symbols"
+opt-level = "s"

@@ -1,6 +1,8 @@
 use bootloader_api::info::{FrameBufferInfo, PixelFormat};
 use core::fmt;
-use font8x8::UnicodeFonts;
+use noto_sans_mono_bitmap::{
+    FontWeight, RasterHeight, RasterizedChar, get_raster, get_raster_width,
+};
 use spin::Mutex;
 
 pub static WRITER: Mutex<Option<FrameBufferWriter>> = Mutex::new(None);
@@ -29,7 +31,7 @@ impl FrameBufferWriter {
     }
 
     fn newline(&mut self) {
-        self.y_pos += 8;
+        self.y_pos += 16;
         self.carriage_return();
     }
 
@@ -38,14 +40,17 @@ impl FrameBufferWriter {
     }
 
     pub fn backspace(&mut self) {
-        if self.x_pos >= 8 {
-            self.x_pos -= 8;
-        } else if self.y_pos >= 8 {
-            self.y_pos -= 8;
-            self.x_pos = self.width() - 8;
+        let width = get_raster_width(FontWeight::Regular, RasterHeight::Size16);
+        if self.x_pos >= width {
+            self.x_pos -= width;
+        } else if self.y_pos >= 16 {
+            self.y_pos -= 16;
+            self.x_pos = self.width() - width;
         }
-        self.write_rendered_char([0; 8]);
-        self.x_pos -= 8;
+
+        let empty_char = get_raster(' ', FontWeight::Regular, RasterHeight::Size16).unwrap();
+        self.write_rendered_char(&empty_char);
+        self.x_pos -= width;
     }
 
     pub fn clear(&mut self) {
@@ -67,30 +72,33 @@ impl FrameBufferWriter {
             '\n' => self.newline(),
             '\r' => self.carriage_return(),
             c => {
-                let new_xpos = self.x_pos + 8;
+                let width = get_raster_width(FontWeight::Regular, RasterHeight::Size16);
+                let new_xpos = self.x_pos + width;
                 if new_xpos >= self.width() {
                     self.newline();
                 }
-                let new_ypos = self.y_pos + 8 - 1;
+                let new_ypos = self.y_pos + 16 - 1;
                 if new_ypos >= self.height() {
                     self.clear();
                 }
-                if let Some(glyph) = font8x8::BASIC_FONTS.get(c) {
-                    self.write_rendered_char(glyph);
-                }
+
+                let raster_char = get_raster(c, FontWeight::Regular, RasterHeight::Size16)
+                    .unwrap_or_else(|| {
+                        get_raster(' ', FontWeight::Regular, RasterHeight::Size16).unwrap()
+                    });
+
+                self.write_rendered_char(&raster_char);
             }
         }
     }
 
-    fn write_rendered_char(&mut self, glyph: [u8; 8]) {
-        for (y, byte) in glyph.iter().enumerate() {
-            for x in 0..8 {
-                let bit = *byte & (1 << x);
-                let color = if bit != 0 { 0xFF } else { 0x00 };
-                self.write_pixel(self.x_pos + x, self.y_pos + y, color);
+    fn write_rendered_char(&mut self, raster_char: &RasterizedChar) {
+        for (y, row) in raster_char.raster().iter().enumerate() {
+            for (x, byte) in row.iter().enumerate() {
+                self.write_pixel(self.x_pos + x, self.y_pos + y, *byte);
             }
         }
-        self.x_pos += 8;
+        self.x_pos += raster_char.width();
     }
 
     fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {

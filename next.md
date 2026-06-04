@@ -2,6 +2,6 @@
   - [x] Enter
   - [x] Syscalls
   - [x] Shell (kinda)
-- [ ] Framebuffer
+- [x] Framebuffer
 - [ ] ZFS
 - [ ] FAT32

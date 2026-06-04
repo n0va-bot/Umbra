@@ -67,14 +67,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::syscall::init();
 
     // Load userspace shell
-    #[repr(C, align(8))]
-    struct Aligned<T: ?Sized>(T);
+    let ramdisk_addr = boot_info
+        .ramdisk_addr
+        .into_option()
+        .expect("No ramdisk found");
+    let ramdisk_len = boot_info.ramdisk_len as usize;
+    let ramdisk = unsafe { core::slice::from_raw_parts(ramdisk_addr as *const u8, ramdisk_len) };
 
-    static SHELL_ELF: &Aligned<[u8]> = &Aligned(*include_bytes!(
-        "../../userspace/target/x86_64-unknown-none/debug/userspace"
-    ));
-
-    let entry_point = umbra::elf_loader::load_elf(&SHELL_ELF.0, &mut mapper, &mut frame_allocator);
+    let entry_point = umbra::elf_loader::load_elf(ramdisk, &mut mapper, &mut frame_allocator);
 
     // Allocate user stack
     unsafe {
