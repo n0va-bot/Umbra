@@ -1,7 +1,7 @@
 - [ ] Userspace
-    - [x] Enter
-    - [ ] Syscalls
-    - [ ] Shell
+  - [x] Enter
+  - [x] Syscalls
+  - [ ] Shell
 - [ ] Framebuffer
 - [ ] ZFS
 - [ ] FAT32

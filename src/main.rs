@@ -34,6 +34,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         .expect("heap initialization failed");
 
     umbra::acpi::init(boot_info.physical_memory_offset);
+    umbra::syscall::init();
 
     unsafe {
         use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
@@ -48,8 +49,16 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             .expect("map_to failed")
             .flush();
 
-        let code_ptr = code_page.start_address().as_mut_ptr::<u16>();
-        code_ptr.write(0xFEEB);
+        let shell_code: [u8; 18] = [
+            0x48, 0xC7, 0xC7, 0x41, 0x00, 0x00, 0x00, // mov rdi, 0x41 ('A')
+            0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00, // mov rax, 0 (sys_write)
+            0x0F, 0x05, // syscall
+            0xEB, 0xFE, // jmp $
+        ];
+        let code_ptr = code_page.start_address().as_mut_ptr::<u8>();
+        for (i, &byte) in shell_code.iter().enumerate() {
+            code_ptr.add(i).write(byte);
+        }
 
         let stack_page = Page::containing_address(VirtAddr::new(0x4444_0000_1000));
         let stack_frame = frame_allocator.allocate_frame().unwrap();
