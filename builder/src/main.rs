@@ -44,12 +44,30 @@ fn main() {
         std::process::exit(1);
     }
 
+    println!("Stripping kernel for bootloader image...");
+    let stripped_kernel = workspace_root
+        .join("target")
+        .join("x86_64-unknown-none")
+        .join("debug")
+        .join("umbra-stripped");
+
+    let strip_status = Command::new("strip")
+        .arg(&kernel_binary)
+        .arg("-o")
+        .arg(&stripped_kernel)
+        .status()
+        .expect("Failed to strip kernel");
+
+    if !strip_status.success() {
+        std::process::exit(1);
+    }
+
     println!("Creating BIOS disk image...");
     let mut boot_config = bootloader::BootConfig::default();
     boot_config.frame_buffer.minimum_framebuffer_width = Some(800);
     boot_config.frame_buffer.minimum_framebuffer_height = Some(600);
 
-    let mut bios_boot = bootloader::BiosBoot::new(&kernel_binary);
+    let mut bios_boot = bootloader::BiosBoot::new(&stripped_kernel);
     bios_boot.set_boot_config(&boot_config);
     bios_boot.set_ramdisk(&userspace_binary);
     bios_boot
@@ -62,6 +80,7 @@ fn main() {
     let status = Command::new("qemu-system-x86_64")
         .arg("-drive")
         .arg(format!("format=raw,file={}", bios_image.display()))
+        .arg("-enable-kvm")
         .status()
         .expect("Failed to run QEMU");
 
