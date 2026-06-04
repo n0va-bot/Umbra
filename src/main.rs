@@ -8,6 +8,7 @@ extern crate alloc;
 
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
+use umbra::elf_loader::load_elf;
 use umbra::memory;
 use umbra::memory::BootInfoFrameAllocator;
 use umbra::task::keyboard;
@@ -36,45 +37,35 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     umbra::acpi::init(boot_info.physical_memory_offset);
     umbra::syscall::init();
 
+    // Load userspace shell
+    #[repr(C, align(8))]
+    struct Aligned<T: ?Sized>(T);
+
+    static SHELL_ELF: &Aligned<[u8]> = &Aligned(*include_bytes!(
+        "../userspace/target/x86_64-unknown-none/debug/userspace"
+    ));
+
+    let entry_point = umbra::elf_loader::load_elf(&SHELL_ELF.0, &mut mapper, &mut frame_allocator);
+
+    // Allocate user stack
     unsafe {
         use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
 
-        let code_page = Page::containing_address(VirtAddr::new(0x4444_0000_0000));
-        let code_frame = frame_allocator.allocate_frame().unwrap();
+        let stack_page = Page::containing_address(VirtAddr::new(0x5555_0000_0000));
+        let stack_frame = frame_allocator.allocate_frame().unwrap();
         let flags =
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-
-        mapper
-            .map_to(code_page, code_frame, flags, &mut frame_allocator)
-            .expect("map_to failed")
-            .flush();
-
-        let shell_code: [u8; 18] = [
-            0x48, 0xC7, 0xC7, 0x41, 0x00, 0x00, 0x00, // mov rdi, 0x41 ('A')
-            0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00, // mov rax, 0 (sys_write)
-            0x0F, 0x05, // syscall
-            0xEB, 0xFE, // jmp $
-        ];
-        let code_ptr = code_page.start_address().as_mut_ptr::<u8>();
-        for (i, &byte) in shell_code.iter().enumerate() {
-            code_ptr.add(i).write(byte);
-        }
-
-        let stack_page = Page::containing_address(VirtAddr::new(0x4444_0000_1000));
-        let stack_frame = frame_allocator.allocate_frame().unwrap();
 
         mapper
             .map_to(stack_page, stack_frame, flags, &mut frame_allocator)
             .expect("map_to failed")
             .flush();
 
-        // Jump to Ring 3
-        let ip = code_page.start_address().as_u64();
         let stack_ptr = stack_page.start_address().as_u64() + 4096;
         let code_sel = umbra::gdt::get_user_code_selector().0 as u64;
         let data_sel = umbra::gdt::get_user_data_selector().0 as u64;
 
-        umbra::userspace::enter_user_mode(ip, stack_ptr, code_sel, data_sel);
+        umbra::userspace::enter_user_mode(entry_point, stack_ptr, code_sel, data_sel);
     }
 
     #[cfg(test)]

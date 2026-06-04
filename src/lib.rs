@@ -12,6 +12,7 @@ extern crate alloc;
 pub mod acpi;
 pub mod allocator;
 pub mod cmos;
+pub mod elf_loader;
 pub mod gdt;
 pub mod interrupts;
 pub mod memory;
