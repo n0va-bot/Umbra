@@ -7,27 +7,7 @@ use x86_64::structures::tss::TaskStateSegment;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
-lazy_static! {
-    static ref TSS: TaskStateSegment = {
-        let mut tss = TaskStateSegment::new();
-        tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
-            const STACK_SIZE: usize = 4096 * 5;
-            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-
-            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(STACK));
-            let stack_end = stack_start + STACK_SIZE as u64;
-            stack_end
-        };
-        tss.privilege_stack_table[0] = {
-            const STACK_SIZE: usize = 4096 * 5;
-            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(STACK));
-            stack_start + STACK_SIZE as u64
-        };
-
-        tss
-    };
-}
+static mut TSS: TaskStateSegment = TaskStateSegment::new();
 
 lazy_static! {
     static ref GDT: (GlobalDescriptorTable, Selectors) = {
@@ -36,7 +16,9 @@ lazy_static! {
         let data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
         let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
         let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
-        let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
+        let tss_selector = gdt.add_entry(Descriptor::tss_segment(unsafe {
+            &*core::ptr::addr_of!(TSS)
+        }));
         (
             gdt,
             Selectors {
@@ -59,6 +41,21 @@ struct Selectors {
 }
 
 pub fn init() {
+    unsafe {
+        TSS.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
+            const STACK_SIZE: usize = 4096 * 5;
+            static mut DF_STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(DF_STACK));
+            stack_start + STACK_SIZE as u64
+        };
+        TSS.privilege_stack_table[0] = {
+            const STACK_SIZE: usize = 4096 * 5;
+            static mut BOOT_STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(BOOT_STACK));
+            stack_start + STACK_SIZE as u64
+        };
+    }
+
     GDT.0.load();
     unsafe {
         CS::set_reg(GDT.1.code_selector);
@@ -80,4 +77,10 @@ pub fn get_kernel_code_selector() -> SegmentSelector {
 
 pub fn get_kernel_data_selector() -> SegmentSelector {
     GDT.1.data_selector
+}
+
+pub fn set_kernel_rsp0(stack_top: VirtAddr) {
+    unsafe {
+        TSS.privilege_stack_table[0] = stack_top;
+    }
 }
