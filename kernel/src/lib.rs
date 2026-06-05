@@ -18,6 +18,7 @@ pub mod gdt;
 pub mod interrupts;
 pub mod memory;
 pub mod pci;
+pub mod process;
 pub mod serial;
 pub mod syscall;
 pub mod task;
