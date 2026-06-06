@@ -139,13 +139,28 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
         let shell_index = PROCESSES.lock().insert(shell_process);
 
-        for round in 0..5 {
-            umbra::serial_println!("[kernel] round {}: switching to shell", round);
-            process::switch_to(kernel_index, shell_index);
-            umbra::serial_println!("[kernel] round {}: shell yielded back", round);
+        loop {
+            match process::schedule(kernel_index) {
+                Some(next_idx) => {
+                    {
+                        let mut table = PROCESSES.lock();
+                        table.get_mut(next_idx).unwrap().state = State::Running;
+                    }
+                    process::switch_to(kernel_index, next_idx);
+                    {
+                        let mut table = PROCESSES.lock();
+                        if let Some(p) = table.get_mut(next_idx) {
+                            if p.state == State::Running {
+                                p.state = State::Ready;
+                            }
+                        }
+                    }
+                }
+                None => {
+                    x86_64::instructions::interrupts::enable_and_hlt();
+                }
+            }
         }
-
-        umbra::hlt_loop();
     }
 
     #[cfg(test)]

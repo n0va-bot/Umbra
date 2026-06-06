@@ -133,6 +133,19 @@ impl ProcessTable {
 
 pub static PROCESSES: Mutex<ProcessTable> = Mutex::new(ProcessTable::new());
 
+pub fn schedule(after_idx: usize) -> Option<usize> {
+    let table = PROCESSES.lock();
+    for i in 1..=MAX_PROCESSES {
+        let idx = (after_idx + i) % MAX_PROCESSES;
+        if let Some(proc) = table.get(idx) {
+            if proc.state == State::Ready {
+                return Some(idx);
+            }
+        }
+    }
+    None
+}
+
 #[unsafe(naked)]
 pub extern "C" fn return_to_user() {
     naked_asm!("iretq")
