@@ -12,22 +12,19 @@ pub fn init() {
         let kernel_ds = crate::gdt::get_kernel_data_selector();
 
         Star::write(user_cs, user_ds, kernel_cs, kernel_ds).unwrap();
-
         LStar::write(x86_64::VirtAddr::new(syscall_entry as u64));
-
         SFMask::write(x86_64::registers::rflags::RFlags::INTERRUPT_FLAG);
     }
 }
 
-static mut KERNEL_SYSCALL_STACK: [u8; 4096 * 4] = [0; 4096 * 4];
-static mut USER_RSP_BACKUP: u64 = 0;
+static mut USER_RSP_COPY: u64 = 0;
 
 #[unsafe(naked)]
 extern "C" fn syscall_entry() {
     naked_asm!(
-        // Swap to kernel stack
+        // Swap to process's kernel stack
         "mov [rip + {user_rsp}], rsp",
-        "lea rsp, [rip + {kernel_stack} + {stack_size}]",
+        "mov rsp, [rip + {kernel_rsp}]",
 
         // Save registers (SysV)
         "push r11",
@@ -40,8 +37,8 @@ extern "C" fn syscall_entry() {
         "push r9",
 
         "mov rcx, r10",
-
         "call {dispatch}",
+
         "pop r9",
         "pop r8",
         "pop r10",
@@ -53,13 +50,10 @@ extern "C" fn syscall_entry() {
 
         // Swap back to user stack
         "mov rsp, [rip + {user_rsp}]",
-
-        // Return to userspace
         "sysretq",
 
-        user_rsp = sym USER_RSP_BACKUP,
-        kernel_stack = sym KERNEL_SYSCALL_STACK,
-        stack_size = const 4096 * 4,
+        user_rsp = sym USER_RSP_COPY,
+        kernel_rsp = sym crate::process::KERNEL_RSP,
         dispatch = sym syscall_dispatch,
     );
 }
@@ -106,6 +100,14 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, rcx: u64, r8: u64, 
         }
         6 => {
             crate::pci::scan_buses();
+            0
+        }
+        7 => {
+            if let Some(current) = crate::process::PROCESSES.lock().current_index() {
+                if current != 0 {
+                    unsafe { crate::process::switch_to(current, 0) };
+                }
+            }
             0
         }
         _ => 0,

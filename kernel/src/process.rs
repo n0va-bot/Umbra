@@ -9,7 +9,7 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame;
 use x86_64::{PhysAddr, VirtAddr};
 
-pub const KERNEL_STACK_PAGES: usize = 16;
+const KERNEL_STACK_PAGES: usize = 16;
 const MAX_PROCESSES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,20 +53,22 @@ pub struct Process {
 }
 
 pub const KERNEL_STACK_SIZE: usize = 4096 * KERNEL_STACK_PAGES;
+const MAX_KERNEL_STACKS: usize = MAX_PROCESSES;
+static mut KERNEL_STACK_POOL: [u8; KERNEL_STACK_SIZE * MAX_KERNEL_STACKS] =
+    [0; KERNEL_STACK_SIZE * MAX_KERNEL_STACKS];
+static mut NEXT_KERNEL_STACK: usize = 0;
 
 pub fn allocate_kernel_stack() -> VirtAddr {
-    let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 4096)
-        .expect("kernel stack layout");
-    let base = unsafe { alloc::alloc::alloc_zeroed(layout) } as u64;
-
-    if base == 0 {
-        panic!("kernel stack allocation failed (out of memory)");
+    unsafe {
+        let idx = NEXT_KERNEL_STACK;
+        if idx >= MAX_KERNEL_STACKS {
+            panic!("kernel stack pool exhausted");
+        }
+        NEXT_KERNEL_STACK = idx + 1;
+        let base = (core::ptr::addr_of!(KERNEL_STACK_POOL) as u64)
+            + (idx as u64 * KERNEL_STACK_SIZE as u64);
+        VirtAddr::new(base + KERNEL_STACK_SIZE as u64)
     }
-
-    static COUNT: AtomicUsize = AtomicUsize::new(0);
-    let _ = COUNT.fetch_add(1, Ordering::Relaxed);
-
-    VirtAddr::new(base + KERNEL_STACK_SIZE as u64)
 }
 
 pub struct ProcessTable {
@@ -157,6 +159,8 @@ pub extern "C" fn context_switch(_old_rsp_out: *mut u64, _new_rsp: u64) {
     )
 }
 
+pub static mut KERNEL_RSP: u64 = 0;
+
 pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
     let new_cr3: x86_64::PhysAddr;
     let new_kernel_stack_top: VirtAddr;
@@ -173,10 +177,11 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
         old_rsp_slot = core::ptr::addr_of!(old_proc.kernel_rsp) as *mut u64;
     }
 
+    KERNEL_RSP = new_kernel_stack_top.as_u64();
     gdt::set_kernel_rsp0(new_kernel_stack_top);
-    unsafe {
-        Cr3::write(PhysFrame::containing_address(new_cr3), Cr3Flags::empty());
-    }
+
+    Cr3::write(PhysFrame::containing_address(new_cr3), Cr3Flags::empty());
+
     context_switch(old_rsp_slot, new_rsp);
 }
 

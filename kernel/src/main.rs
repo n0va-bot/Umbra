@@ -8,21 +8,22 @@ extern crate alloc;
 
 use bootloader_api::config::{BootloaderConfig, Mapping};
 use bootloader_api::{BootInfo, entry_point};
+use core::panic::PanicInfo;
+use umbra::elf_loader::load_elf;
+use umbra::memory;
+use umbra::memory::BootInfoFrameAllocator;
+use umbra::process::{self, PROCESSES, Pid, Process, SavedRegs, State};
+use umbra::task::{Task, executor::Executor, keyboard};
+use umbra::{print, println};
+use x86_64::VirtAddr;
+use x86_64::registers::control::Cr3;
+use x86_64::structures::paging::FrameAllocator;
 
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
     config
 };
-use core::panic::PanicInfo;
-use umbra::elf_loader::load_elf;
-use umbra::memory;
-use umbra::memory::BootInfoFrameAllocator;
-use umbra::task::keyboard;
-use umbra::task::{Task, executor::Executor};
-use umbra::{print, println};
-use x86_64::VirtAddr;
-use x86_64::structures::paging::FrameAllocator;
 
 entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
@@ -92,7 +93,59 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         let code_sel = umbra::gdt::get_user_code_selector().0 as u64;
         let data_sel = umbra::gdt::get_user_data_selector().0 as u64;
 
-        umbra::userspace::enter_user_mode(entry_point, stack_ptr, code_sel, data_sel);
+        let (boot_frame, _) = Cr3::read();
+
+        let kernel_stack_top = process::allocate_kernel_stack();
+
+        let kernel_process = Process {
+            pid: Pid::alloc(),
+            state: State::Running,
+            cr3: boot_frame.start_address(),
+            kernel_stack_top,
+            kernel_rsp: VirtAddr::new(0),
+            saved: SavedRegs::default(),
+        };
+
+        let kernel_index = {
+            let mut table = PROCESSES.lock();
+            let index = table.insert(kernel_process);
+            table.set_current(index);
+            index
+        };
+
+        const RFLAGS_IF: u64 = 1 << 9;
+
+        let user_cs = umbra::gdt::get_user_code_selector().0 as u64;
+        let user_ss = umbra::gdt::get_user_data_selector().0 as u64;
+        let shell_kernel_stack_top = process::allocate_kernel_stack();
+
+        let shell_kernel_rsp = process::setup_first_dispatch(
+            shell_kernel_stack_top,
+            entry_point,
+            user_cs,
+            RFLAGS_IF,
+            0x5555_0000_0000 + 4096,
+            user_ss,
+        );
+
+        let shell_process = Process {
+            pid: Pid::alloc(),
+            state: State::Ready,
+            cr3: boot_frame.start_address(),
+            kernel_stack_top: shell_kernel_stack_top,
+            kernel_rsp: shell_kernel_rsp,
+            saved: SavedRegs::default(),
+        };
+
+        let shell_index = PROCESSES.lock().insert(shell_process);
+
+        for round in 0..5 {
+            umbra::serial_println!("[kernel] round {}: switching to shell", round);
+            process::switch_to(kernel_index, shell_index);
+            umbra::serial_println!("[kernel] round {}: shell yielded back", round);
+        }
+
+        umbra::hlt_loop();
     }
 
     #[cfg(test)]

@@ -27,6 +27,10 @@ pub fn sys_write(byte: u8) {
     unsafe { syscall(0, byte as u64, 0, 0, 0, 0) };
 }
 
+unsafe fn sys_yield() -> u64 {
+    syscall(7, 0, 0, 0, 0, 0)
+}
+
 struct Stdout;
 
 impl core::fmt::Write for Stdout {
@@ -82,6 +86,7 @@ pub extern "C" fn _start() -> ! {
                                 if let Ok(s) = core::str::from_utf8(&buffer[..len]) {
                                     process_command(s);
                                 }
+                                unsafe { sys_yield() };
                                 len = 0;
                                 print!("> ");
                             }
