@@ -1,4 +1,5 @@
 use core::arch::naked_asm;
+use core::sync::atomic::Ordering;
 use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask, Star};
 use x86_64::structures::gdt::SegmentSelector;
 
@@ -103,10 +104,9 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, rcx: u64, r8: u64, 
             0
         }
         7 => {
-            if let Some(current) = crate::process::PROCESSES.lock().current_index() {
-                if current != 0 {
-                    unsafe { crate::process::switch_to(current, 0) };
-                }
+            let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+            if current != 0 {
+                unsafe { crate::process::switch_to(current, 0) };
             }
             0
         }

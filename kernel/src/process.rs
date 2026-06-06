@@ -160,6 +160,7 @@ pub extern "C" fn context_switch(_old_rsp_out: *mut u64, _new_rsp: u64) {
 }
 
 pub static mut KERNEL_RSP: u64 = 0;
+pub static CURRENT_PROCESS: AtomicUsize = AtomicUsize::new(0);
 
 pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
     let new_cr3: x86_64::PhysAddr;
@@ -177,9 +178,10 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
         old_rsp_slot = core::ptr::addr_of!(old_proc.kernel_rsp) as *mut u64;
     }
 
+    CURRENT_PROCESS.store(new_idx, Ordering::SeqCst);
+
     KERNEL_RSP = new_kernel_stack_top.as_u64();
     gdt::set_kernel_rsp0(new_kernel_stack_top);
-
     Cr3::write(PhysFrame::containing_address(new_cr3), Cr3Flags::empty());
 
     context_switch(old_rsp_slot, new_rsp);
