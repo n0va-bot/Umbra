@@ -1,4 +1,19 @@
-use x86_64::{VirtAddr, structures::paging::PageTable};
+use x86_64::registers::control::Cr3;
+use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PhysFrame, Size4KiB};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTable};
+
+/// Global physical memory offset
+static mut PHYS_MEM_OFFSET: u64 = 0;
+
+/// Store the physical memory offset
+pub fn store_phys_mem_offset(offset: VirtAddr) {
+    unsafe { PHYS_MEM_OFFSET = offset.as_u64() };
+}
+
+/// Retrieve the stored physical memory offset
+pub fn get_phys_mem_offset() -> VirtAddr {
+    unsafe { VirtAddr::new(PHYS_MEM_OFFSET) }
+}
 
 /// Returns a mutable reference to the active level 4 table.
 ///
@@ -7,8 +22,6 @@ use x86_64::{VirtAddr, structures::paging::PageTable};
 /// `physical_memory_offset`. Also, this function must be only called once
 /// to avoid aliasing `&mut` references (which is undefined behavior).
 unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut PageTable {
-    use x86_64::registers::control::Cr3;
-
     let (level_4_table_frame, _) = Cr3::read();
 
     let phys = level_4_table_frame.start_address();
@@ -17,8 +30,6 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 
     unsafe { &mut *page_table_ptr }
 }
-
-use x86_64::PhysAddr;
 
 /// Translates the given virtual address to the mapped physical address, or
 /// `None` if the address is not mapped.
@@ -36,7 +47,6 @@ pub unsafe fn translate_addr(addr: VirtAddr, physical_memory_offset: VirtAddr) -
 /// the whole body of unsafe functions as an unsafe block. This function must
 /// only be reachable through `unsafe fn` from outside of this module.
 fn translate_addr_inner(addr: VirtAddr, physical_memory_offset: VirtAddr) -> Option<PhysAddr> {
-    use x86_64::registers::control::Cr3;
     use x86_64::structures::paging::page_table::FrameError;
 
     // read the active level 4 frame from the CR3 register
@@ -70,9 +80,7 @@ fn translate_addr_inner(addr: VirtAddr, physical_memory_offset: VirtAddr) -> Opt
     Some(frame.start_address() + u64::from(addr.page_offset()))
 }
 
-use x86_64::structures::paging::OffsetPageTable;
-
-/// Initialize a new OffsetPageTable.
+/// Initialize a new OffsetPageTable for the boot (current) CR3.
 ///
 /// This function is unsafe because the caller must guarantee that the
 /// complete physical memory is mapped to virtual memory at the passed
@@ -85,7 +93,65 @@ pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static>
     }
 }
 
-use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PhysFrame, Size4KiB};
+/// Create an `OffsetPageTable` for an **arbitrary** PML4 whose physical
+/// address is known.  Used by `process::spawn` to set up mappings in a
+/// brand-new address space without switching CR3 first.
+///
+/// # Safety
+///
+/// The caller must ensure `pml4_phys` points to a valid PML4 frame and that
+/// the physical memory offset is valid.
+pub unsafe fn create_mapper_for_pml4(pml4_phys: PhysAddr) -> OffsetPageTable<'static> {
+    let offset = get_phys_mem_offset();
+    let pml4_virt = offset + pml4_phys.as_u64();
+    let pml4 = unsafe { &mut *(pml4_virt.as_mut_ptr() as *mut PageTable) };
+    unsafe { OffsetPageTable::new(pml4, offset) }
+}
+
+/// Clone **all kernel mappings** from the current PML4 into a brand-new PML4
+/// frame, leaving user-space entries (the ones that will hold ELF code /
+/// stack) zeroed.
+///
+/// This copies every non-empty PML4 entry from the boot page tables.  That
+/// includes:
+///   - higher-half entries 256-511 (kernel code, physical-memory mapping, …)
+///   - lower-half entries like the heap at 0x4444_4444_0000
+///
+/// The new PML4 shares the same PDP/PD/PT frames as the boot PML4 for all
+/// kernel regions (copy-on-write would be an optimisation, but for a hobby OS
+/// with < 16 processes this is fine).
+///
+/// Returns the **physical** address of the new PML4 frame (suitable for CR3).
+///
+/// # Safety
+///
+/// Caller must ensure the frame allocator returns unused frames.
+pub unsafe fn clone_kernel_pml4(frame_allocator: &mut impl FrameAllocator<Size4KiB>) -> PhysAddr {
+    let offset = get_phys_mem_offset();
+    let (current_pml4_frame, _) = Cr3::read();
+    let current_pml4_ptr =
+        (offset + current_pml4_frame.start_address().as_u64()).as_ptr() as *const u64;
+
+    let new_pml4_frame = frame_allocator
+        .allocate_frame()
+        .expect("out of frames for PML4");
+    let new_pml4_ptr = (offset + new_pml4_frame.start_address().as_u64()).as_mut_ptr() as *mut u64;
+
+    for i in 0..512 {
+        unsafe { *new_pml4_ptr.add(i) = 0 };
+    }
+
+    for i in 0..512 {
+        let entry_bits = unsafe { *current_pml4_ptr.add(i) };
+        if entry_bits != 0 {
+            unsafe { *new_pml4_ptr.add(i) = entry_bits };
+        }
+    }
+
+    new_pml4_frame.start_address()
+}
+
+use x86_64::structures::paging::{Mapper, Page};
 
 /// Creates an example mapping for the given page to frame `0xb8000`.
 pub fn create_example_mapping(

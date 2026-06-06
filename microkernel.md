@@ -1,17 +1,12 @@
 ## 1. Multi-process core
 
-> Process table, per-process page tables, kernel stack per process, a real
-> scheduler (round-robin is fine to start), `yield` / preemptive switch on the
-> timer interrupt. Right now `iretq` into the shell is a one-way trip with a
-> TODO.
-
 ### Process table & identity
 - [x] `Process` struct (`pid`, `state`, `cr3`, `kernel_stack_top`, `kernel_rsp`, `saved`)
 - [x] `Pid::alloc()` (monotonic counter)
 - [x] `ProcessTable` with fixed slots (`MAX_PROCESSES = 16`)
 - [x] `PROCESSES` global mutex + `current()` / `current_mut()` / `set_current()`
-- [ ] Use `State::Blocked` / `State::Exited` for real lifecycle management
-- [ ] Process teardown (free slot, reclaim kernel stack, unmap page tables)
+- [x] Use `State::Blocked` / `State::Exited` for real lifecycle management
+- [x] Process teardown (free slot, reclaim kernel stack, unmap page tables)
 
 ### Per-process kernel stacks
 - [x] Static kernel stack pool (`KERNEL_STACK_POOL`, one stack per process slot)
@@ -31,22 +26,22 @@
 - [x] `syscall 7` (yield) switches back to kernel process (index 0)
 - [x] Shell calls `sys_yield()` after each command line
 - [ ] Return from userspace without a dedicated yield syscall (e.g. on exit)
-- [ ] Replace the debug `for round in 0..5` loop with a permanent scheduler loop
+- [x] Replace the debug `for round in 0..5` loop with a permanent scheduler loop
 
 ### Per-process page tables
-- [ ] Clone boot page tables per process (or fresh PML4 per process)
-- [ ] Map kernel regions into every address space (higher-half)
-- [ ] Map user code/stack only into the owning process's CR3
-- [ ] `process::spawn(elf_bytes)` helper encapsulating map + stack + dispatch setup
+- [x] Clone boot page tables per process (or fresh PML4 per process)
+- [x] Map kernel regions into every address space (higher-half)
+- [x] Map user code/stack only into the owning process's CR3
+- [x] `process::spawn(elf_bytes)` helper encapsulating map + stack + dispatch setup
 - [ ] Syscall path validates pointers against current process's mappings
 
 ### Scheduler
-- [ ] Round-robin over `State::Ready` processes in `ProcessTable`
-- [ ] `schedule()` called from yield syscall and from timer interrupt
+- [x] Round-robin over `State::Ready` processes in `ProcessTable`
+- [x] `schedule()` called from yield syscall and from timer interrupt
 - [ ] Timer interrupt handler calls `schedule()` for preemptive multitasking
 - [ ] Kernel thread (index 0) runs the async executor / idle loop when no user work
 
-**Status: ~60% — cooperative yield works; no per-process CR3, no preemptive scheduler.**
+**Status: ~75% — per-process CR3 works, scheduler loop runs, cooperative yield works; no preemptive scheduler.**
 
 ---
 
@@ -167,8 +162,6 @@
 
 - [x] `umbra::init()` — GDT, IDT, PIC, enable interrupts
 - [ ] Split into `arch::init()`, `mem::init(boot_info)`, `ipc::init()`, `process::init()`
-- [ ] Move user stack mapping into `process::spawn`
-- [ ] `kernel_main` becomes a short init chain + `schedule()` forever
-- [ ] Remove inline ELF load / stack map / switch_to boilerplate from `main.rs`
-
-**Status: boot works but `kernel_main` still owns all spawn logic inline.**
+- [x] Move user stack mapping into `process::spawn`
+- [x] `kernel_main` becomes a short init chain + `schedule()` forever
+- [x] Remove inline ELF load / stack map / switch_to boilerplate from `main.rs`

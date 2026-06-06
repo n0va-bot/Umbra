@@ -9,15 +9,11 @@ extern crate alloc;
 use bootloader_api::config::{BootloaderConfig, Mapping};
 use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use umbra::elf_loader::load_elf;
-use umbra::memory;
 use umbra::memory::BootInfoFrameAllocator;
+use umbra::println;
 use umbra::process::{self, PROCESSES, Pid, Process, SavedRegs, State};
-use umbra::task::{Task, executor::Executor, keyboard};
-use umbra::{print, println};
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
-use x86_64::structures::paging::FrameAllocator;
 
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
@@ -52,7 +48,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::init();
     umbra::serial_println!("[kernel] init done");
 
-    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+    let mut mapper = unsafe { umbra::memory::init(phys_mem_offset) };
     let mut frame_allocator =
         unsafe { BootInfoFrameAllocator::init(&mut boot_info.memory_regions) };
 
@@ -60,12 +56,37 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .expect("heap initialization failed");
     umbra::serial_println!("[kernel] heap initialized");
 
+    umbra::memory::store_phys_mem_offset(phys_mem_offset);
+    umbra::serial_println!(
+        "[kernel] phys_mem_offset stored at {:#X}",
+        phys_mem_offset.as_u64()
+    );
+
     umbra::acpi::init(phys_mem_offset.as_u64());
     umbra::serial_println!("[kernel] acpi initialized");
     umbra::syscall::init();
     umbra::task::keyboard::ScancodeStream::init_scancode_queue();
 
     // Load userspace shell
+    let (boot_frame, _) = Cr3::read();
+    let kernel_stack_top = process::allocate_kernel_stack();
+
+    let kernel_process = Process {
+        pid: Pid::alloc(),
+        state: State::Running,
+        cr3: boot_frame.start_address(),
+        kernel_stack_top,
+        kernel_rsp: VirtAddr::new(0),
+        saved: SavedRegs::default(),
+    };
+
+    let kernel_index = {
+        let mut table = PROCESSES.lock();
+        let index = table.insert(kernel_process);
+        table.set_current(index);
+        index
+    };
+
     let ramdisk_addr = boot_info
         .ramdisk_addr
         .into_option()
@@ -73,106 +94,38 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let ramdisk_len = boot_info.ramdisk_len as usize;
     let ramdisk = unsafe { core::slice::from_raw_parts(ramdisk_addr as *const u8, ramdisk_len) };
 
-    let entry_point = umbra::elf_loader::load_elf(ramdisk, &mut mapper, &mut frame_allocator);
+    let _shell_index = process::spawn(ramdisk, &mut frame_allocator);
+    umbra::serial_println!("[kernel] shell spawned");
 
-    // Allocate user stack
-    unsafe {
-        use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
-
-        let stack_page = Page::containing_address(VirtAddr::new(0x5555_0000_0000));
-        let stack_frame = frame_allocator.allocate_frame().unwrap();
-        let flags =
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-
-        mapper
-            .map_to(stack_page, stack_frame, flags, &mut frame_allocator)
-            .expect("map_to failed")
-            .flush();
-
-        let stack_ptr = stack_page.start_address().as_u64() + 4096;
-        let code_sel = umbra::gdt::get_user_code_selector().0 as u64;
-        let data_sel = umbra::gdt::get_user_data_selector().0 as u64;
-
-        let (boot_frame, _) = Cr3::read();
-
-        let kernel_stack_top = process::allocate_kernel_stack();
-
-        let kernel_process = Process {
-            pid: Pid::alloc(),
-            state: State::Running,
-            cr3: boot_frame.start_address(),
-            kernel_stack_top,
-            kernel_rsp: VirtAddr::new(0),
-            saved: SavedRegs::default(),
-        };
-
-        let kernel_index = {
-            let mut table = PROCESSES.lock();
-            let index = table.insert(kernel_process);
-            table.set_current(index);
-            index
-        };
-
-        const RFLAGS_IF: u64 = 1 << 9;
-
-        let user_cs = umbra::gdt::get_user_code_selector().0 as u64;
-        let user_ss = umbra::gdt::get_user_data_selector().0 as u64;
-        let shell_kernel_stack_top = process::allocate_kernel_stack();
-
-        let shell_kernel_rsp = process::setup_first_dispatch(
-            shell_kernel_stack_top,
-            entry_point,
-            user_cs,
-            RFLAGS_IF,
-            0x5555_0000_0000 + 4096,
-            user_ss,
-        );
-
-        let shell_process = Process {
-            pid: Pid::alloc(),
-            state: State::Ready,
-            cr3: boot_frame.start_address(),
-            kernel_stack_top: shell_kernel_stack_top,
-            kernel_rsp: shell_kernel_rsp,
-            saved: SavedRegs::default(),
-        };
-
-        let shell_index = PROCESSES.lock().insert(shell_process);
-
-        loop {
-            match process::schedule(kernel_index) {
-                Some(next_idx) => {
-                    {
-                        let mut table = PROCESSES.lock();
-                        table.get_mut(next_idx).unwrap().state = State::Running;
+    loop {
+        match process::schedule(kernel_index) {
+            Some(next_idx) => {
+                {
+                    let mut table = PROCESSES.lock();
+                    if let Some(p) = table.get_mut(next_idx) {
+                        p.state = State::Running;
                     }
-                    process::switch_to(kernel_index, next_idx);
-                    {
-                        let mut table = PROCESSES.lock();
-                        if let Some(p) = table.get_mut(next_idx) {
-                            if p.state == State::Running {
-                                p.state = State::Ready;
-                            }
+                }
+
+                unsafe { process::switch_to(kernel_index, next_idx) };
+
+                {
+                    let mut table = PROCESSES.lock();
+                    if let Some(p) = table.get_mut(next_idx) {
+                        if p.state == State::Running {
+                            p.state = State::Ready;
                         }
                     }
                 }
-                None => {
-                    x86_64::instructions::interrupts::enable_and_hlt();
-                }
+            }
+            None => {
+                x86_64::instructions::interrupts::enable_and_hlt();
             }
         }
     }
 
     #[cfg(test)]
     test_main();
-
-    // TODO: restore once we return from userspace via syscall
-    // let mut executor = Executor::new();
-    // umbra::vga_buffer::clear_screen();
-    // umbra::vga_buffer::enable_cursor();
-    // print!("> ");
-    // executor.spawn(Task::new(keyboard::run_shell()));
-    // executor.run();
 }
 
 // This function is called on panic (yes, I'm even copying the comments)

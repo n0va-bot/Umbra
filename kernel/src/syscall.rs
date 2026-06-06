@@ -1,7 +1,6 @@
 use core::arch::naked_asm;
 use core::sync::atomic::Ordering;
 use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask, Star};
-use x86_64::structures::gdt::SegmentSelector;
 
 pub fn init() {
     unsafe {
@@ -13,7 +12,7 @@ pub fn init() {
         let kernel_ds = crate::gdt::get_kernel_data_selector();
 
         Star::write(user_cs, user_ds, kernel_cs, kernel_ds).unwrap();
-        LStar::write(x86_64::VirtAddr::new(syscall_entry as u64));
+        LStar::write(x86_64::VirtAddr::new(syscall_entry as *const () as u64));
         SFMask::write(x86_64::registers::rflags::RFlags::INTERRUPT_FLAG);
     }
 }
@@ -59,7 +58,14 @@ extern "C" fn syscall_entry() {
     );
 }
 
-extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, rcx: u64, r8: u64, r9: u64) -> u64 {
+extern "C" fn syscall_dispatch(
+    rdi: u64,
+    _rsi: u64,
+    _rdx: u64,
+    _rcx: u64,
+    _r8: u64,
+    _r9: u64,
+) -> u64 {
     let syscall_nr: u64;
     unsafe { core::arch::asm!("mov {}, rax", out(reg) syscall_nr) };
 
@@ -106,6 +112,20 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, rcx: u64, r8: u64, 
         7 => {
             let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
             if current != 0 {
+                {
+                    let mut table = crate::process::PROCESSES.lock();
+                    if let Some(p) = table.get_mut(current) {
+                        p.state = crate::process::State::Ready;
+                    }
+                }
+                unsafe { crate::process::switch_to(current, 0) };
+            }
+            0
+        }
+        8 => {
+            let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+            if current != 0 {
+                crate::process::exit(current);
                 unsafe { crate::process::switch_to(current, 0) };
             }
             0
