@@ -5,8 +5,8 @@
 - [x] `Pid::alloc()` (monotonic counter)
 - [x] `ProcessTable` with fixed slots (`MAX_PROCESSES = 16`)
 - [x] `PROCESSES` global mutex + `current()` / `current_mut()` / `set_current()`
-- [x] Use `State::Blocked` / `State::Exited` for real lifecycle management
-- [x] Process teardown (free slot, reclaim kernel stack, unmap page tables)
+- [/] Use `State::Blocked` / `State::Exited` for real lifecycle management
+- [/] Process teardown (free slot, reclaim kernel stack, unmap page tables)
 
 ### Per-process kernel stacks
 - [x] Static kernel stack pool (`KERNEL_STACK_POOL`, one stack per process slot)
@@ -33,13 +33,13 @@
 - [x] Map kernel regions into every address space (higher-half)
 - [x] Map user code/stack only into the owning process's CR3
 - [x] `process::spawn(elf_bytes)` helper encapsulating map + stack + dispatch setup
-- [x] Syscall path validates pointers against current process's mappings
+- [/] Syscall path validates pointers against current process's mappings
 
 ### Scheduler
 - [x] Round-robin over `State::Ready` processes in `ProcessTable`
 - [x] `schedule()` called from yield syscall and from timer interrupt
-- [x] Timer interrupt handler calls `schedule()` for preemptive multitasking
-- [x] Kernel thread (index 0) runs the async executor / idle loop when no user work
+- [/] Timer interrupt handler calls `schedule()` for preemptive multitasking
+- [/] Kernel thread (index 0) runs the async executor / idle loop when no user work
 
 ---
 
@@ -59,6 +59,7 @@
 - [x] `5` — read RTC (CMOS, in-kernel)
 - [x] `6` — PCI scan (in-kernel)
 - [x] `7` — yield (process switch)
+- [x] `8` — exit (process switch)
 
 ### IPC design & implementation
 - [ ] Define message format (fixed-size buffer, e.g. 64 bytes + tag)
@@ -68,8 +69,6 @@
 - [ ] `ipc_call(endpoint_cap, msg)` — send + wait for reply in one syscall
 - [ ] Port existing shell operations to IPC calls against userspace servers
 - [ ] Remove the `match syscall_nr` dispatch table
-
-**Status: not started — still 8 numbered syscalls.**
 
 ---
 
@@ -114,8 +113,6 @@
 - [ ] Decision: keep in-kernel for boot logs (defensible) or move to `tty` server
 - [x] Currently in-kernel (`serial.rs`) — fine for now
 
-**Status: not started — all drivers still in `kernel/src/`.**
-
 ---
 
 ## 4. Capabilities
@@ -132,8 +129,6 @@
 - [ ] `mmap` syscall gated on `Frame` cap
 - [ ] Bootstrap: shell starts with caps to fb-server, rtc, pci-arbiter, power, keyboard — nothing else
 
-**Status: not started.**
-
 ---
 
 ## 5. Split the kernel into workspace crates
@@ -148,8 +143,6 @@
 - [ ] `kernel` — thin binary wiring boot only
 - [ ] `userspace/libumbra` — shared `cap`, `ipc`, `process::spawn` helpers
 - [ ] `userspace/{shell,fb-server,rtc,pci-arbiter,ps2-kbd,power}` — one binary each
-
-**Status: minimal workspace exists; kernel is still a single monolithic `umbra` crate.**
 
 ---
 
