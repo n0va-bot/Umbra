@@ -3,6 +3,7 @@
   - [x] Syscalls
   - [x] Shell (kinda)
 - [x] Framebuffer
+- [ ] Serial console
 - [ ] Disk
   1. [ ] VFS
   2. [ ] FAT32

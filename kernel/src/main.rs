@@ -103,7 +103,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mut executor = Executor::new();
 
     loop {
-        process::teardown_exited();
+        process::teardown_exited(&mut frame_allocator);
 
         match process::schedule(kernel_index) {
             Some(next_idx) => {

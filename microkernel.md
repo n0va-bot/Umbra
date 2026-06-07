@@ -5,8 +5,8 @@
 - [x] `Pid::alloc()` (monotonic counter)
 - [x] `ProcessTable` with fixed slots (`MAX_PROCESSES = 16`)
 - [x] `PROCESSES` global mutex + `current()` / `current_mut()` / `set_current()`
-- [/] Use `State::Blocked` / `State::Exited` for real lifecycle management
-- [/] Process teardown (free slot, reclaim kernel stack, unmap page tables)
+- [x] Use `State::Blocked` / `State::Exited` for real lifecycle management
+- [x] Process teardown (free slot, reclaim kernel stack, unmap page tables)
 
 ### Per-process kernel stacks
 - [x] Static kernel stack pool (`KERNEL_STACK_POOL`, one stack per process slot)
@@ -33,13 +33,13 @@
 - [x] Map kernel regions into every address space (higher-half)
 - [x] Map user code/stack only into the owning process's CR3
 - [x] `process::spawn(elf_bytes)` helper encapsulating map + stack + dispatch setup
-- [/] Syscall path validates pointers against current process's mappings
+- [x] Syscall path validates pointers against current process's mappings
 
 ### Scheduler
 - [x] Round-robin over `State::Ready` processes in `ProcessTable`
 - [x] `schedule()` called from yield syscall and from timer interrupt
-- [/] Timer interrupt handler calls `schedule()` for preemptive multitasking
-- [/] Kernel thread (index 0) runs the async executor / idle loop when no user work
+- [x] Timer interrupt handler calls `schedule()` for preemptive multitasking
+- [x] Kernel thread (index 0) runs the async executor / idle loop when no user work
 
 ---
 
@@ -62,7 +62,7 @@
 - [x] `8` — exit (process switch)
 
 ### IPC design & implementation
-- [ ] Define message format (fixed-size buffer, e.g. 64 bytes + tag)
+- [/] Define message format (fixed-size buffer, e.g. 64 bytes + tag)
 - [ ] Kernel endpoint registry (per-process send/receive queues)
 - [ ] `ipc_send(endpoint_cap, msg)` syscall
 - [ ] `ipc_recv(endpoint_cap, msg)` syscall (block process until message arrives)

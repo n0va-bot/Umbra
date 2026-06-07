@@ -7,7 +7,9 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, Page, PageTableFlags, PhysFrame, Size4KiB,
 };
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTable};
+
+use crate::memory::BootInfoFrameAllocator;
 
 const KERNEL_STACK_PAGES: usize = 16;
 pub const MAX_PROCESSES: usize = 16;
@@ -373,39 +375,35 @@ pub fn exit(index: usize) {
     }
 }
 
-/// Tear down a process: remove its slot from the process table and return
-/// its kernel stack to the pool.
-///
-/// The PML4 frame (and any sub-tables owned solely by the process) is
-/// currently *leaked* — see `microkernel.md` "Process teardown" follow-up.
-/// The kernel process at index 0 is permanent and silently skipped.
-pub fn teardown(index: usize) {
+pub fn teardown(index: usize, frame_allocator: &mut BootInfoFrameAllocator) {
     if index == 0 {
         return;
     }
 
-    let slot = {
+    let (cr3, slot) = {
         let mut table = PROCESSES.lock();
         let proc = match table.get_mut(index) {
             Some(p) => p,
             None => return,
         };
+        let cr3 = proc.cr3;
         let slot = proc.kernel_stack_slot;
         table.remove(index);
-        slot
+        (cr3, slot)
     };
+
+    deallocate_user_tables(PhysFrame::containing_address(cr3), frame_allocator);
 
     free_kernel_stack(slot);
     crate::serial_println!(
-        "[process] tore down slot {} (kernel stack slot {})",
+        "[process] tore down slot {} (kernel stack slot {}, PML4 {:#X})",
         index,
-        slot
+        slot,
+        cr3.as_u64()
     );
 }
 
-/// Scan the process table for [`State::Exited`] processes and tear them
-/// down. Called from the kernel process's scheduler loop on every tick.
-pub fn teardown_exited() {
+pub fn teardown_exited(frame_allocator: &mut BootInfoFrameAllocator) {
     let mut to_teardown: [usize; MAX_PROCESSES] = [0; MAX_PROCESSES];
     let mut count = 0;
 
@@ -422,25 +420,111 @@ pub fn teardown_exited() {
     }
 
     for i in 0..count {
-        teardown(to_teardown[i]);
+        teardown(to_teardown[i], frame_allocator);
     }
 }
 
-/// Validate that a user-space pointer is accessible in the current process.
-/// Returns the physical address if valid, None otherwise.
+fn deallocate_user_tables(pml4_frame: PhysFrame, frame_allocator: &mut BootInfoFrameAllocator) {
+    use x86_64::structures::paging::page_table::FrameError;
+
+    let offset = crate::memory::get_phys_mem_offset();
+    let pml4_virt = offset + pml4_frame.start_address().as_u64();
+    let pml4 = unsafe { &*(pml4_virt.as_ptr() as *const PageTable) };
+
+    for pml4_idx in 0..256 {
+        let pml4_entry = &pml4[pml4_idx];
+        if !pml4_entry.flags().contains(PageTableFlags::PRESENT) {
+            continue;
+        }
+        if !pml4_entry.flags().contains(PageTableFlags::USER_ACCESSIBLE) {
+            continue;
+        }
+        let pdpt_frame = match pml4_entry.frame() {
+            Ok(f) => f,
+            Err(FrameError::HugeFrame) => panic!("huge page in PML4 (unsupported)"),
+            Err(FrameError::FrameNotPresent) => continue,
+        };
+
+        let pdpt_virt = offset + pdpt_frame.start_address().as_u64();
+        let pdpt = unsafe { &*(pdpt_virt.as_ptr() as *const PageTable) };
+
+        for pdpt_idx in 0..512 {
+            let pdpt_entry = &pdpt[pdpt_idx];
+            if !pdpt_entry.flags().contains(PageTableFlags::PRESENT) {
+                continue;
+            }
+            if !pdpt_entry.flags().contains(PageTableFlags::USER_ACCESSIBLE) {
+                continue;
+            }
+            let pd_frame = match pdpt_entry.frame() {
+                Ok(f) => f,
+                Err(FrameError::HugeFrame) => panic!("huge page in PDPT (unsupported)"),
+                Err(FrameError::FrameNotPresent) => continue,
+            };
+
+            let pd_virt = offset + pd_frame.start_address().as_u64();
+            let pd = unsafe { &*(pd_virt.as_ptr() as *const PageTable) };
+
+            for pd_idx in 0..512 {
+                let pd_entry = &pd[pd_idx];
+                if !pd_entry.flags().contains(PageTableFlags::PRESENT) {
+                    continue;
+                }
+                if !pd_entry.flags().contains(PageTableFlags::USER_ACCESSIBLE) {
+                    continue;
+                }
+                if pd_entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                    if let Ok(big_frame) = pd_entry.frame() {
+                        frame_allocator.deallocate_frame(big_frame);
+                    }
+                    continue;
+                }
+                let pt_frame = match pd_entry.frame() {
+                    Ok(f) => f,
+                    Err(FrameError::FrameNotPresent) => continue,
+                    Err(FrameError::HugeFrame) => unreachable!(),
+                };
+
+                let pt_virt = offset + pt_frame.start_address().as_u64();
+                let pt = unsafe { &*(pt_virt.as_ptr() as *const PageTable) };
+
+                for pt_idx in 0..512 {
+                    let pt_entry = &pt[pt_idx];
+                    if !pt_entry.flags().contains(PageTableFlags::PRESENT) {
+                        continue;
+                    }
+                    if !pt_entry.flags().contains(PageTableFlags::USER_ACCESSIBLE) {
+                        continue;
+                    }
+                    if let Ok(leaf_frame) = pt_entry.frame() {
+                        frame_allocator.deallocate_frame(leaf_frame);
+                    }
+                }
+
+                frame_allocator.deallocate_frame(pt_frame);
+            }
+
+            frame_allocator.deallocate_frame(pd_frame);
+        }
+
+        frame_allocator.deallocate_frame(pdpt_frame);
+    }
+
+    frame_allocator.deallocate_frame(pml4_frame);
+}
+
 pub fn validate_user_ptr(vaddr: VirtAddr) -> Option<PhysAddr> {
     let current = CURRENT_PROCESS.load(Ordering::SeqCst);
     if current == 0 {
         return None;
     }
 
-    let table = PROCESSES.lock();
-    let proc = table.get(current)?;
-    let cr3 = proc.cr3;
-    drop(table);
+    let cr3 = {
+        let table = PROCESSES.lock();
+        table.get(current)?.cr3
+    };
 
     let offset = crate::memory::get_phys_mem_offset();
-
     let table_indexes = [
         vaddr.p4_index(),
         vaddr.p3_index(),
@@ -456,13 +540,31 @@ pub fn validate_user_ptr(vaddr: VirtAddr) -> Option<PhysAddr> {
         let entry = &table[index];
         frame = match entry.frame() {
             Ok(f) => f,
-            Err(x86_64::structures::paging::page_table::FrameError::FrameNotPresent) => return None,
+            Err(x86_64::structures::paging::page_table::FrameError::FrameNotPresent) => {
+                return None;
+            }
             Err(x86_64::structures::paging::page_table::FrameError::HugeFrame) => return None,
         };
-        if !entry.flags().contains(x86_64::structures::paging::PageTableFlags::USER_ACCESSIBLE) {
+        if !entry
+            .flags()
+            .contains(x86_64::structures::paging::PageTableFlags::USER_ACCESSIBLE)
+        {
             return None;
         }
     }
 
     Some(frame.start_address() + u64::from(vaddr.page_offset()))
+}
+
+pub fn validate_user_range(vaddr: VirtAddr, len: usize) -> Option<()> {
+    if len == 0 {
+        return Some(());
+    }
+    validate_user_ptr(vaddr)?;
+    let end = VirtAddr::new(vaddr.as_u64() + (len - 1) as u64);
+    if end.p1_index() == vaddr.p1_index() {
+        return Some(());
+    }
+    validate_user_ptr(end)?;
+    Some(())
 }

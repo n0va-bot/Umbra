@@ -41,6 +41,11 @@ pub static TICKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64:
 pub static RESCHEDULE_NEEDED: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
+/// Process table index the timer handler most recently picked to run next.
+/// `usize::MAX` means "no decision pending" (consumed).
+pub static PENDING_NEXT: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(usize::MAX);
+
 const TIME_QUANTUM: u64 = 100;
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
@@ -48,7 +53,12 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 
     let current = crate::process::CURRENT_PROCESS.load(core::sync::atomic::Ordering::SeqCst);
     if current != 0 && ticks > 0 && ticks % TIME_QUANTUM == 0 {
-        RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
+        if let Some(next_idx) = crate::process::schedule(current) {
+            if next_idx != current {
+                PENDING_NEXT.store(next_idx, core::sync::atomic::Ordering::Release);
+                RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
+            }
+        }
     }
 
     unsafe {

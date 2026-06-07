@@ -27,6 +27,10 @@ pub fn sys_write(byte: u8) {
     unsafe { syscall(0, byte as u64, 0, 0, 0, 0) };
 }
 
+pub unsafe fn sys_write_str(ptr: *const u8, len: usize) -> u64 {
+    syscall(9, ptr as u64, len as u64, 0, 0, 0)
+}
+
 unsafe fn sys_yield() -> u64 {
     syscall(7, 0, 0, 0, 0, 0)
 }
@@ -35,8 +39,11 @@ struct Stdout;
 
 impl core::fmt::Write for Stdout {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for b in s.bytes() {
-            sys_write(b);
+        let ret = unsafe { sys_write_str(s.as_ptr(), s.len()) };
+        if ret == u64::MAX {
+            for b in s.bytes() {
+                sys_write(b);
+            }
         }
         Ok(())
     }

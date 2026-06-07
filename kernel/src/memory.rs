@@ -2,6 +2,9 @@ use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PhysFrame, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTable};
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 /// Global physical memory offset
 static mut PHYS_MEM_OFFSET: u64 = 0;
 
@@ -185,6 +188,7 @@ use bootloader_api::info::MemoryRegions;
 pub struct BootInfoFrameAllocator {
     memory_map: &'static mut MemoryRegions,
     next: usize,
+    recycled: Vec<PhysFrame>,
 }
 
 impl BootInfoFrameAllocator {
@@ -197,7 +201,16 @@ impl BootInfoFrameAllocator {
         BootInfoFrameAllocator {
             memory_map,
             next: 0,
+            recycled: Vec::new(),
         }
+    }
+
+    pub fn deallocate_frame(&mut self, frame: PhysFrame) {
+        let virt = get_phys_mem_offset() + frame.start_address().as_u64();
+        unsafe {
+            core::ptr::write_bytes(virt.as_mut_ptr::<u8>(), 0, 4096);
+        }
+        self.recycled.push(frame);
     }
 }
 
@@ -220,6 +233,9 @@ impl BootInfoFrameAllocator {
 
 unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        if let Some(frame) = self.recycled.pop() {
+            return Some(frame);
+        }
         let frame = self.usable_frames().nth(self.next);
         self.next += 1;
         frame

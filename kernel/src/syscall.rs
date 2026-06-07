@@ -61,7 +61,7 @@ extern "C" fn syscall_entry() {
 
 extern "C" fn syscall_dispatch(
     rdi: u64,
-    _rsi: u64,
+    rsi: u64,
     _rdx: u64,
     _rcx: u64,
     _r8: u64,
@@ -74,15 +74,16 @@ extern "C" fn syscall_dispatch(
         .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
         .is_ok()
     {
+        let pending = crate::interrupts::PENDING_NEXT.swap(usize::MAX, Ordering::AcqRel);
         let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
-        if current != 0 {
+        if current != 0 && pending != usize::MAX && pending != current {
             {
                 let mut table = crate::process::PROCESSES.lock();
                 if let Some(p) = table.get_mut(current) {
                     p.state = crate::process::State::Ready;
                 }
             }
-            unsafe { crate::process::switch_to(current, 0) };
+            unsafe { crate::process::switch_to(current, pending) };
         }
     }
 
@@ -144,6 +145,27 @@ extern "C" fn syscall_dispatch(
             if current != 0 {
                 crate::process::exit(current);
                 unsafe { crate::process::switch_to(current, 0) };
+            }
+            0
+        }
+        9 => {
+            let ptr = x86_64::VirtAddr::new(rdi);
+            let len = rsi as usize;
+            if crate::process::validate_user_range(ptr, len).is_none() {
+                crate::serial_println!(
+                    "[syscall] 9: rejected invalid user buffer {:#X}..{:#X}",
+                    rdi,
+                    rdi.wrapping_add(len as u64)
+                );
+                return u64::MAX;
+            }
+            let slice = unsafe { core::slice::from_raw_parts(rdi as *const u8, len) };
+            for &byte in slice {
+                if byte == 8 {
+                    crate::framebuffer::backspace();
+                } else {
+                    crate::print!("{}", byte as char);
+                }
             }
             0
         }

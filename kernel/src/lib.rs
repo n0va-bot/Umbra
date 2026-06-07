@@ -16,6 +16,7 @@ pub mod elf_loader;
 pub mod framebuffer;
 pub mod gdt;
 pub mod interrupts;
+pub mod ipc;
 pub mod memory;
 pub mod pci;
 pub mod process;
