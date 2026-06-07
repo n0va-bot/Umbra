@@ -22,6 +22,8 @@ lazy_static! {
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
+        idt.general_protection_fault
+            .set_handler_fn(general_protection_fault_handler);
         idt
     };
 }
@@ -36,8 +38,19 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 
 pub static TICKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+pub static RESCHEDULE_NEEDED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+const TIME_QUANTUM: u64 = 100;
+
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    let ticks = TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+    let current = crate::process::CURRENT_PROCESS.load(core::sync::atomic::Ordering::SeqCst);
+    if current != 0 && ticks > 0 && ticks % TIME_QUANTUM == 0 {
+        RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
+    }
+
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
@@ -56,6 +69,16 @@ extern "x86-interrupt" fn page_fault_handler(
     println!("EXCEPTION: PAGE FAULT");
     println!("Accessed Address: {:?}", Cr2::read());
     println!("Error Code: {:?}", error_code);
+    println!("{:#?}", stack_frame);
+    hlt_loop();
+}
+
+extern "x86-interrupt" fn general_protection_fault_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: u64,
+) {
+    println!("EXCEPTION: GENERAL PROTECTION FAULT");
+    println!("Error Code: {:#X}", error_code);
     println!("{:#?}", stack_frame);
     hlt_loop();
 }

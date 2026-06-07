@@ -10,7 +10,7 @@ use x86_64::structures::paging::{
 use x86_64::{PhysAddr, VirtAddr};
 
 const KERNEL_STACK_PAGES: usize = 16;
-const MAX_PROCESSES: usize = 16;
+pub const MAX_PROCESSES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
@@ -272,8 +272,8 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
 
     let kernel_stack_top = allocate_kernel_stack();
 
-    let user_cs = crate::gdt::get_user_code_selector().0 as u64;
-    let user_ss = crate::gdt::get_user_data_selector().0 as u64;
+    let user_cs = crate::gdt::get_user_code_selector().0 as u64 | 3;
+    let user_ss = crate::gdt::get_user_data_selector().0 as u64 | 3;
     const RFLAGS_IF: u64 = 1 << 9;
 
     let kernel_rsp = unsafe {
@@ -308,12 +308,10 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
     index
 }
 
-/// Mark a process as exited and free its slot
 pub fn exit(index: usize) {
     let mut table = PROCESSES.lock();
     if let Some(proc) = table.get_mut(index) {
         crate::serial_println!("[process] PID {} exited", proc.pid.0);
         proc.state = State::Exited;
     }
-    table.remove(index);
 }

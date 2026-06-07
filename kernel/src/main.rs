@@ -11,7 +11,7 @@ use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use umbra::memory::BootInfoFrameAllocator;
 use umbra::println;
-use umbra::process::{self, PROCESSES, Pid, Process, SavedRegs, State};
+use umbra::process::{self, MAX_PROCESSES, PROCESSES, Pid, Process, SavedRegs, State};
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
 
@@ -98,6 +98,17 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::serial_println!("[kernel] shell spawned");
 
     loop {
+        {
+            let mut table = PROCESSES.lock();
+            for i in 1..MAX_PROCESSES {
+                if let Some(p) = table.get(i) {
+                    if p.state == State::Exited {
+                        table.remove(i);
+                    }
+                }
+            }
+        }
+
         match process::schedule(kernel_index) {
             Some(next_idx) => {
                 {

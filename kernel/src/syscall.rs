@@ -6,12 +6,13 @@ pub fn init() {
     unsafe {
         Efer::update(|flags| flags.insert(EferFlags::SYSTEM_CALL_EXTENSIONS));
 
-        let user_cs = crate::gdt::get_user_code_selector();
-        let user_ds = crate::gdt::get_user_data_selector();
         let kernel_cs = crate::gdt::get_kernel_code_selector();
         let kernel_ds = crate::gdt::get_kernel_data_selector();
 
-        Star::write(user_cs, user_ds, kernel_cs, kernel_ds).unwrap();
+        let sysret_base =
+            x86_64::structures::gdt::SegmentSelector::new(2, x86_64::PrivilegeLevel::Ring0);
+
+        Star::write(sysret_base, sysret_base, kernel_cs, kernel_ds).unwrap();
         LStar::write(x86_64::VirtAddr::new(syscall_entry as *const () as u64));
         SFMask::write(x86_64::registers::rflags::RFlags::INTERRUPT_FLAG);
     }
@@ -68,6 +69,22 @@ extern "C" fn syscall_dispatch(
 ) -> u64 {
     let syscall_nr: u64;
     unsafe { core::arch::asm!("mov {}, rax", out(reg) syscall_nr) };
+
+    if crate::interrupts::RESCHEDULE_NEEDED
+        .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+        if current != 0 {
+            {
+                let mut table = crate::process::PROCESSES.lock();
+                if let Some(p) = table.get_mut(current) {
+                    p.state = crate::process::State::Ready;
+                }
+            }
+            unsafe { crate::process::switch_to(current, 0) };
+        }
+    }
 
     match syscall_nr {
         0 => {
