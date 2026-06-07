@@ -9,10 +9,10 @@ pub fn init() {
         let kernel_cs = crate::gdt::get_kernel_code_selector();
         let kernel_ds = crate::gdt::get_kernel_data_selector();
 
-        let sysret_base =
-            x86_64::structures::gdt::SegmentSelector::new(2, x86_64::PrivilegeLevel::Ring0);
+        let user_cs = crate::gdt::get_user_code_selector();
+        let user_ds = crate::gdt::get_user_data_selector();
 
-        Star::write(sysret_base, sysret_base, kernel_cs, kernel_ds).unwrap();
+        Star::write(user_cs, user_ds, kernel_cs, kernel_ds).unwrap();
         LStar::write(x86_64::VirtAddr::new(syscall_entry as *const () as u64));
         SFMask::write(x86_64::registers::rflags::RFlags::INTERRUPT_FLAG);
     }
