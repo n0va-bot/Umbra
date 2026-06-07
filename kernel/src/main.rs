@@ -11,7 +11,7 @@ use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use umbra::memory::BootInfoFrameAllocator;
 use umbra::println;
-use umbra::process::{self, MAX_PROCESSES, PROCESSES, Pid, Process, SavedRegs, State};
+use umbra::process::{self, PROCESSES, Pid, Process, SavedRegs, State};
 use umbra::task::executor::Executor;
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
@@ -70,13 +70,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Load userspace shell
     let (boot_frame, _) = Cr3::read();
-    let kernel_stack_top = process::allocate_kernel_stack();
+    let (kernel_stack_slot, kernel_stack_top) = process::allocate_kernel_stack();
 
     let kernel_process = Process {
         pid: Pid::alloc(),
         state: State::Running,
         cr3: boot_frame.start_address(),
         kernel_stack_top,
+        kernel_stack_slot,
         kernel_rsp: VirtAddr::new(0),
         saved: SavedRegs::default(),
         interrupt_frame: process::InterruptFrame::default(),
@@ -102,16 +103,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mut executor = Executor::new();
 
     loop {
-        {
-            let mut table = PROCESSES.lock();
-            for i in 1..MAX_PROCESSES {
-                if let Some(p) = table.get(i) {
-                    if p.state == State::Exited {
-                        table.remove(i);
-                    }
-                }
-            }
-        }
+        process::teardown_exited();
 
         match process::schedule(kernel_index) {
             Some(next_idx) => {

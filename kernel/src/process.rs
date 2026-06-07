@@ -70,6 +70,9 @@ pub struct Process {
     pub state: State,
     pub cr3: PhysAddr,
     pub kernel_stack_top: VirtAddr,
+    /// Index into the static [`KERNEL_STACK_POOL`] backing this process's
+    /// kernel stack. Required to return the slot to the pool on teardown.
+    pub kernel_stack_slot: usize,
     pub kernel_rsp: VirtAddr,
     pub saved: SavedRegs,
     pub interrupt_frame: InterruptFrame,
@@ -79,18 +82,46 @@ pub const KERNEL_STACK_SIZE: usize = 4096 * KERNEL_STACK_PAGES;
 const MAX_KERNEL_STACKS: usize = MAX_PROCESSES;
 static mut KERNEL_STACK_POOL: [u8; KERNEL_STACK_SIZE * MAX_KERNEL_STACKS] =
     [0; KERNEL_STACK_SIZE * MAX_KERNEL_STACKS];
-static mut NEXT_KERNEL_STACK: usize = 0;
 
-pub fn allocate_kernel_stack() -> VirtAddr {
+/// Bit `i` set means kernel stack slot `i` is in use.
+///
+/// A bitmap (rather than a forward counter) lets us hand slots back to the
+/// pool on process teardown. Only ever touched from the kernel process's
+/// scheduler loop, which is single-threaded by construction.
+static mut KERNEL_STACK_BITMAP: u16 = 0;
+
+/// Allocate a kernel stack from the static pool.
+///
+/// Returns `(slot_index, stack_top_virt_addr)`. The caller is responsible
+/// for storing `slot_index` in the [`Process`] so it can be passed to
+/// [`free_kernel_stack`] on teardown.
+pub fn allocate_kernel_stack() -> (usize, VirtAddr) {
     unsafe {
-        let idx = NEXT_KERNEL_STACK;
-        if idx >= MAX_KERNEL_STACKS {
-            panic!("kernel stack pool exhausted");
+        for slot in 0..MAX_KERNEL_STACKS {
+            if KERNEL_STACK_BITMAP & (1u16 << slot) == 0 {
+                KERNEL_STACK_BITMAP |= 1u16 << slot;
+                let base = (core::ptr::addr_of!(KERNEL_STACK_POOL) as u64)
+                    + (slot as u64 * KERNEL_STACK_SIZE as u64);
+                return (slot, VirtAddr::new(base + KERNEL_STACK_SIZE as u64));
+            }
         }
-        NEXT_KERNEL_STACK = idx + 1;
-        let base = (core::ptr::addr_of!(KERNEL_STACK_POOL) as u64)
-            + (idx as u64 * KERNEL_STACK_SIZE as u64);
-        VirtAddr::new(base + KERNEL_STACK_SIZE as u64)
+    }
+    panic!("kernel stack pool exhausted");
+}
+
+/// Return a kernel stack slot to the pool. The slot must currently be in
+/// use (i.e. allocated and not yet freed).
+pub fn free_kernel_stack(slot: usize) {
+    assert!(
+        slot < MAX_KERNEL_STACKS,
+        "free_kernel_stack: slot {slot} out of range"
+    );
+    unsafe {
+        assert!(
+            KERNEL_STACK_BITMAP & (1u16 << slot) != 0,
+            "free_kernel_stack: slot {slot} already free"
+        );
+        KERNEL_STACK_BITMAP &= !(1u16 << slot);
     }
 }
 
@@ -293,7 +324,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
             .flush();
     }
 
-    let kernel_stack_top = allocate_kernel_stack();
+    let (kernel_stack_slot, kernel_stack_top) = allocate_kernel_stack();
 
     let user_cs = crate::gdt::get_user_code_selector().0 as u64 | 3;
     let user_ss = crate::gdt::get_user_data_selector().0 as u64 | 3;
@@ -316,6 +347,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
         state: State::Ready,
         cr3: new_cr3,
         kernel_stack_top,
+        kernel_stack_slot,
         kernel_rsp,
         saved: SavedRegs::default(),
         interrupt_frame: InterruptFrame::default(),
@@ -323,11 +355,12 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
 
     let index = PROCESSES.lock().insert(process);
     crate::serial_println!(
-        "[process] spawned PID {} at index {} (CR3={:#X}, entry={:#X})",
+        "[process] spawned PID {} at index {} (CR3={:#X}, entry={:#X}, kstack_slot={})",
         pid.0,
         index,
         new_cr3.as_u64(),
-        entry_point
+        entry_point,
+        kernel_stack_slot
     );
     index
 }
@@ -337,6 +370,59 @@ pub fn exit(index: usize) {
     if let Some(proc) = table.get_mut(index) {
         crate::serial_println!("[process] PID {} exited", proc.pid.0);
         proc.state = State::Exited;
+    }
+}
+
+/// Tear down a process: remove its slot from the process table and return
+/// its kernel stack to the pool.
+///
+/// The PML4 frame (and any sub-tables owned solely by the process) is
+/// currently *leaked* — see `microkernel.md` "Process teardown" follow-up.
+/// The kernel process at index 0 is permanent and silently skipped.
+pub fn teardown(index: usize) {
+    if index == 0 {
+        return;
+    }
+
+    let slot = {
+        let mut table = PROCESSES.lock();
+        let proc = match table.get_mut(index) {
+            Some(p) => p,
+            None => return,
+        };
+        let slot = proc.kernel_stack_slot;
+        table.remove(index);
+        slot
+    };
+
+    free_kernel_stack(slot);
+    crate::serial_println!(
+        "[process] tore down slot {} (kernel stack slot {})",
+        index,
+        slot
+    );
+}
+
+/// Scan the process table for [`State::Exited`] processes and tear them
+/// down. Called from the kernel process's scheduler loop on every tick.
+pub fn teardown_exited() {
+    let mut to_teardown: [usize; MAX_PROCESSES] = [0; MAX_PROCESSES];
+    let mut count = 0;
+
+    {
+        let table = PROCESSES.lock();
+        for i in 1..MAX_PROCESSES {
+            if let Some(p) = table.get(i) {
+                if p.state == State::Exited {
+                    to_teardown[count] = i;
+                    count += 1;
+                }
+            }
+        }
+    }
+
+    for i in 0..count {
+        teardown(to_teardown[i]);
     }
 }
 
