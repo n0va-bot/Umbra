@@ -64,7 +64,7 @@ impl Stream for ScancodeStream {
     }
 }
 
-pub async fn run_shell() {
+pub async fn print_keypresses() {
     let mut scancodes = ScancodeStream::new();
     let mut keyboard = Keyboard::new(
         ScancodeSet1::new(),
@@ -72,38 +72,16 @@ pub async fn run_shell() {
         HandleControl::Ignore,
     );
 
-    let mut buffer = alloc::string::String::new();
-
     while let Some(scancode) = scancodes.next().await {
         if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
             if let Some(key) = keyboard.process_keyevent(key_event) {
                 match key {
-                    DecodedKey::Unicode(character) => match character {
-                        '\n' => {
-                            println!();
-                            process_command(&buffer);
-                            buffer.clear();
-                            print!("> ");
-                        }
-                        '\u{8}' | '\x7f' => {
-                            if buffer.pop().is_some() {
-                                crate::framebuffer::backspace();
-                            }
-                        }
-                        c if c.is_ascii_graphic() || c == ' ' => {
-                            buffer.push(c);
-                            print!("{}", c);
-                        }
-                        _ => {}
-                    },
-                    DecodedKey::RawKey(key) => match key {
-                        pc_keyboard::KeyCode::Backspace => {
-                            if buffer.pop().is_some() {
-                                crate::framebuffer::backspace();
-                            }
-                        }
-                        _ => {}
-                    },
+                    DecodedKey::Unicode(character) => {
+                        print!("{}", character);
+                    }
+                    DecodedKey::RawKey(key) => {
+                        print!("{:?}", key);
+                    }
                 }
             }
         }

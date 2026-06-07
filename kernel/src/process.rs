@@ -42,6 +42,28 @@ pub struct SavedRegs {
     pub rbx: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct InterruptFrame {
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
+
+impl Default for InterruptFrame {
+    fn default() -> Self {
+        Self {
+            rip: 0,
+            cs: 0,
+            rflags: 0,
+            rsp: 0,
+            ss: 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Process {
     pub pid: Pid,
@@ -50,6 +72,7 @@ pub struct Process {
     pub kernel_stack_top: VirtAddr,
     pub kernel_rsp: VirtAddr,
     pub saved: SavedRegs,
+    pub interrupt_frame: InterruptFrame,
 }
 
 pub const KERNEL_STACK_SIZE: usize = 4096 * KERNEL_STACK_PAGES;
@@ -208,6 +231,84 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
     context_switch(old_rsp_slot, new_rsp);
 }
 
+/// Preemptive context switch from interrupt handler.
+/// The interrupt frame is on the current kernel stack at `interrupt_rsp`.
+/// Returns the new kernel RSP to load, or 0 if no switch needed.
+pub unsafe fn preempt_switch(interrupt_rsp: u64) -> u64 {
+    let current = CURRENT_PROCESS.load(Ordering::SeqCst);
+    if current == 0 {
+        return 0;
+    }
+
+    let next_idx = {
+        let table = PROCESSES.lock();
+        let mut found = None;
+        for i in 1..=MAX_PROCESSES {
+            let idx = (current + i) % MAX_PROCESSES;
+            if let Some(proc) = table.get(idx) {
+                if proc.state == State::Ready && proc.interrupt_frame.rip != 0 {
+                    found = Some(idx);
+                    break;
+                }
+            }
+        }
+        found
+    };
+
+    let Some(new_idx) = next_idx else {
+        return 0;
+    };
+
+    if new_idx == current {
+        return 0;
+    }
+
+    let (new_cr3, new_kernel_stack_top, new_rsp, old_proc_ptr, new_proc_ptr) = {
+        let table = PROCESSES.lock();
+        let old_proc = table.get(current).expect("preempt_switch: invalid current");
+        let new_proc = table.get(new_idx).expect("preempt_switch: invalid new_idx");
+        (
+            new_proc.cr3,
+            new_proc.kernel_stack_top,
+            new_proc.kernel_rsp.as_u64(),
+            core::ptr::addr_of!(*old_proc) as *mut Process,
+            core::ptr::addr_of!(*new_proc) as *mut Process,
+        )
+    };
+
+    let old_frame_ptr = (interrupt_rsp + 48) as *const InterruptFrame;
+    unsafe {
+        (*old_proc_ptr).interrupt_frame = *old_frame_ptr;
+    }
+
+    CURRENT_PROCESS.store(new_idx, Ordering::SeqCst);
+
+    unsafe {
+        KERNEL_RSP = new_kernel_stack_top.as_u64();
+    }
+    crate::gdt::set_kernel_rsp0(new_kernel_stack_top);
+    unsafe {
+        Cr3::write(PhysFrame::containing_address(new_cr3), Cr3Flags::empty());
+    }
+
+    let new_frame_ptr = (new_rsp + 48) as *mut InterruptFrame;
+    unsafe {
+        *new_frame_ptr = (*new_proc_ptr).interrupt_frame;
+    }
+
+    new_rsp
+}
+
+/// Check if a process has been preempted before (has a valid interrupt frame).
+pub fn has_valid_interrupt_frame(idx: usize) -> bool {
+    let table = PROCESSES.lock();
+    if let Some(proc) = table.get(idx) {
+        proc.interrupt_frame.rip != 0
+    } else {
+        false
+    }
+}
+
 pub unsafe fn setup_first_dispatch(
     kernel_stack_top: VirtAddr,
     user_rip: u64,
@@ -295,6 +396,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
         kernel_stack_top,
         kernel_rsp,
         saved: SavedRegs::default(),
+        interrupt_frame: InterruptFrame::default(),
     };
 
     let index = PROCESSES.lock().insert(process);
@@ -314,4 +416,45 @@ pub fn exit(index: usize) {
         crate::serial_println!("[process] PID {} exited", proc.pid.0);
         proc.state = State::Exited;
     }
+}
+
+/// Validate that a user-space pointer is accessible in the current process.
+/// Returns the physical address if valid, None otherwise.
+pub fn validate_user_ptr(vaddr: VirtAddr) -> Option<PhysAddr> {
+    let current = CURRENT_PROCESS.load(Ordering::SeqCst);
+    if current == 0 {
+        return None;
+    }
+
+    let table = PROCESSES.lock();
+    let proc = table.get(current)?;
+    let cr3 = proc.cr3;
+    drop(table);
+
+    let offset = crate::memory::get_phys_mem_offset();
+
+    let table_indexes = [
+        vaddr.p4_index(),
+        vaddr.p3_index(),
+        vaddr.p2_index(),
+        vaddr.p1_index(),
+    ];
+    let mut frame = PhysFrame::containing_address(cr3);
+
+    for &index in &table_indexes {
+        let virt = offset + frame.start_address().as_u64();
+        let table_ptr: *const x86_64::structures::paging::PageTable = virt.as_ptr();
+        let table = unsafe { &*table_ptr };
+        let entry = &table[index];
+        frame = match entry.frame() {
+            Ok(f) => f,
+            Err(x86_64::structures::paging::page_table::FrameError::FrameNotPresent) => return None,
+            Err(x86_64::structures::paging::page_table::FrameError::HugeFrame) => return None,
+        };
+        if !entry.flags().contains(x86_64::structures::paging::PageTableFlags::USER_ACCESSIBLE) {
+            return None;
+        }
+    }
+
+    Some(frame.start_address() + u64::from(vaddr.page_offset()))
 }

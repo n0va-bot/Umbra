@@ -25,7 +25,7 @@
 - [x] Shell runs in userspace with `syscall` interface
 - [x] `syscall 7` (yield) switches back to kernel process (index 0)
 - [x] Shell calls `sys_yield()` after each command line
-- [ ] Return from userspace without a dedicated yield syscall (e.g. on exit)
+- [x] Return from userspace without a dedicated yield syscall (e.g. on exit)
 - [x] Replace the debug `for round in 0..5` loop with a permanent scheduler loop
 
 ### Per-process page tables
@@ -33,15 +33,13 @@
 - [x] Map kernel regions into every address space (higher-half)
 - [x] Map user code/stack only into the owning process's CR3
 - [x] `process::spawn(elf_bytes)` helper encapsulating map + stack + dispatch setup
-- [ ] Syscall path validates pointers against current process's mappings
+- [x] Syscall path validates pointers against current process's mappings
 
 ### Scheduler
 - [x] Round-robin over `State::Ready` processes in `ProcessTable`
 - [x] `schedule()` called from yield syscall and from timer interrupt
-- [ ] Timer interrupt handler calls `schedule()` for preemptive multitasking
-- [ ] Kernel thread (index 0) runs the async executor / idle loop when no user work
-
-**Status: ~75% — per-process CR3 works, scheduler loop runs, cooperative yield works; no preemptive scheduler.**
+- [x] Timer interrupt handler calls `schedule()` for preemptive multitasking
+- [x] Kernel thread (index 0) runs the async executor / idle loop when no user work
 
 ---
 

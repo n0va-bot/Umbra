@@ -12,6 +12,7 @@ use core::panic::PanicInfo;
 use umbra::memory::BootInfoFrameAllocator;
 use umbra::println;
 use umbra::process::{self, MAX_PROCESSES, PROCESSES, Pid, Process, SavedRegs, State};
+use umbra::task::executor::Executor;
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
 
@@ -78,6 +79,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         kernel_stack_top,
         kernel_rsp: VirtAddr::new(0),
         saved: SavedRegs::default(),
+        interrupt_frame: process::InterruptFrame::default(),
     };
 
     let kernel_index = {
@@ -96,6 +98,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     let _shell_index = process::spawn(ramdisk, &mut frame_allocator);
     umbra::serial_println!("[kernel] shell spawned");
+
+    let mut executor = Executor::new();
 
     loop {
         {
@@ -130,6 +134,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 }
             }
             None => {
+                executor.run_ready_tasks();
                 x86_64::instructions::interrupts::enable_and_hlt();
             }
         }

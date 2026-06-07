@@ -28,7 +28,7 @@ impl Executor {
         self.task_queue.push(task_id).expect("queue full");
     }
 
-    fn run_ready_tasks(&mut self) {
+    pub fn run_ready_tasks(&mut self) {
         let Self {
             tasks,
             task_queue,

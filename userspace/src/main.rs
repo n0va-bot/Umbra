@@ -158,6 +158,7 @@ fn process_command(cmd: &str) {
             println!("  poweroff - Shutdown the system");
             println!("  date     - Print the current date and time");
             println!("  lspci    - List all PCI devices");
+            println!("  exit     - Exit the shell");
         }
         "echo" => {
             let rest = cmd["echo".len()..].trim();
@@ -189,6 +190,9 @@ fn process_command(cmd: &str) {
         }
         "lspci" => {
             unsafe { syscall(6, 0, 0, 0, 0, 0) };
+        }
+        "exit" => {
+            unsafe { syscall(8, 0, 0, 0, 0, 0) };
         }
         _ => {
             println!("Unknown command: {}", command);
