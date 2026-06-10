@@ -59,14 +59,7 @@ extern "C" fn syscall_entry() {
     );
 }
 
-extern "C" fn syscall_dispatch(
-    rdi: u64,
-    rsi: u64,
-    rdx: u64,
-    _rcx: u64,
-    _r8: u64,
-    _r9: u64,
-) -> u64 {
+extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64, _r9: u64) -> u64 {
     let syscall_nr: u64;
     unsafe { core::arch::asm!("mov {}, rax", out(reg) syscall_nr) };
 
@@ -88,15 +81,6 @@ extern "C" fn syscall_dispatch(
     }
 
     match syscall_nr {
-        1 => {
-            if let Ok(queue) = crate::task::keyboard::SCANCODE_QUEUE.try_get() {
-                if let Some(scancode) = queue.pop() {
-                    return scancode as u64;
-                }
-            }
-            u64::MAX
-        }
-        3 => crate::interrupts::TICKS.load(core::sync::atomic::Ordering::Relaxed),
         7 => {
             let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
             if current != 0 {
@@ -125,24 +109,32 @@ extern "C" fn syscall_dispatch(
             // rdi = endpoint_id, rsi = pointer to Message struct in user space
             let endpoint_id = rdi as usize;
             let msg_ptr = rsi as *const crate::ipc::Message;
-            
+
             // Validate the message pointer is in user space
             let msg_vaddr = x86_64::VirtAddr::new(rsi);
-            if crate::process::validate_user_range(msg_vaddr, core::mem::size_of::<crate::ipc::Message>()).is_none() {
-                crate::serial_println!("[syscall] 100: rejected invalid message pointer {:#X}", rsi);
+            if crate::process::validate_user_range(
+                msg_vaddr,
+                core::mem::size_of::<crate::ipc::Message>(),
+            )
+            .is_none()
+            {
+                crate::serial_println!(
+                    "[syscall] 100: rejected invalid message pointer {:#X}",
+                    rsi
+                );
                 return u64::MAX;
             }
-            
+
             let msg = unsafe { &*msg_ptr };
             let endpoint_id = crate::ipc::EndpointId(endpoint_id);
-            
+
             let mut ipc_state = crate::ipc::IPC.lock();
-            
+
             // Check if this is a message for an in-kernel service
             if ipc_state.handle_kernel_service(endpoint_id, msg) {
                 return 0;
             }
-            
+
             // Otherwise, send to the endpoint registry
             match ipc_state.send(endpoint_id, *msg) {
                 Ok(_) => 0,
@@ -155,14 +147,22 @@ extern "C" fn syscall_dispatch(
             // rdi = endpoint_id, rsi = pointer to Message struct in user space (output)
             let endpoint_id = crate::ipc::EndpointId(rdi as usize);
             let msg_ptr = rsi as *mut crate::ipc::Message;
-            
+
             // Validate the message pointer is in user space
             let msg_vaddr = x86_64::VirtAddr::new(rsi);
-            if crate::process::validate_user_range(msg_vaddr, core::mem::size_of::<crate::ipc::Message>()).is_none() {
-                crate::serial_println!("[syscall] 101: rejected invalid message pointer {:#X}", rsi);
+            if crate::process::validate_user_range(
+                msg_vaddr,
+                core::mem::size_of::<crate::ipc::Message>(),
+            )
+            .is_none()
+            {
+                crate::serial_println!(
+                    "[syscall] 101: rejected invalid message pointer {:#X}",
+                    rsi
+                );
                 return u64::MAX;
             }
-            
+
             let mut ipc_state = crate::ipc::IPC.lock();
             match ipc_state.recv(endpoint_id) {
                 Some(msg) => {
@@ -193,24 +193,39 @@ extern "C" fn syscall_dispatch(
             let endpoint_id = crate::ipc::EndpointId(rdi as usize);
             let send_msg_ptr = rsi as *const crate::ipc::Message;
             let recv_msg_ptr = rdx as *mut crate::ipc::Message;
-            
+
             // Validate both pointers
             let send_vaddr = x86_64::VirtAddr::new(rsi);
             let recv_vaddr = x86_64::VirtAddr::new(rdx);
             let msg_size = core::mem::size_of::<crate::ipc::Message>();
-            
+
             if crate::process::validate_user_range(send_vaddr, msg_size).is_none() {
-                crate::serial_println!("[syscall] 102: rejected invalid send message pointer {:#X}", rsi);
+                crate::serial_println!(
+                    "[syscall] 102: rejected invalid send message pointer {:#X}",
+                    rsi
+                );
                 return u64::MAX;
             }
             if crate::process::validate_user_range(recv_vaddr, msg_size).is_none() {
-                crate::serial_println!("[syscall] 102: rejected invalid recv message pointer {:#X}", rdx);
+                crate::serial_println!(
+                    "[syscall] 102: rejected invalid recv message pointer {:#X}",
+                    rdx
+                );
                 return u64::MAX;
             }
-            
+
             let send_msg = unsafe { &*send_msg_ptr };
-            
-            // First send
+
+            // Try to handle as a kernel service call first
+            {
+                let ipc_state = crate::ipc::IPC.lock();
+                if let Some(response_msg) = ipc_state.handle_kernel_call(endpoint_id, send_msg) {
+                    unsafe { *recv_msg_ptr = response_msg };
+                    return 0;
+                }
+            }
+
+            // Not a kernel service or no response
             {
                 let mut ipc_state = crate::ipc::IPC.lock();
                 match ipc_state.send(endpoint_id, *send_msg) {
@@ -218,7 +233,7 @@ extern "C" fn syscall_dispatch(
                     Err(_) => return u64::MAX,
                 }
             }
-            
+
             // Then receive (blocking)
             let mut ipc_state = crate::ipc::IPC.lock();
             match ipc_state.recv(endpoint_id) {

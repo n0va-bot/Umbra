@@ -69,7 +69,7 @@
 - [x] `ipc_call(endpoint_cap, msg)` — send + wait for reply in one syscall
 - [x] Port existing shell operations to IPC calls against in-kernel services
 - [ ] Port existing shell operations to IPC calls against userspace servers
-- [ ] Remove the `match syscall_nr` dispatch table for remaining syscalls (0, 1, 2, 3)
+- [x] Remove the `match syscall_nr` dispatch table (only 7 and 8 remain)
 
 ---
 
@@ -82,8 +82,8 @@
 ### Framebuffer → userspace `fb-server`
 - [ ] `mmap_framebuffer()` — map physical FB region into caller's page table
 - [ ] Extract `framebuffer.rs` rendering into userspace binary
-- [ ] Shell talks to fb-server via IPC (write, clear, backspace)
-- [ ] Remove direct framebuffer access from syscall 0/2
+- [x] Shell talks to fb-server via IPC (write, clear, backspace) (in-kernel for now)
+- [x] Remove direct framebuffer access from syscall 0/2
 
 ### CMOS / RTC → userspace `rtc`
 - [ ] Port-I/O capability for ports `0x70`/`0x71`
@@ -107,7 +107,8 @@
 ### Keyboard → userspace `ps2-kbd` (or keep in-kernel short-term)
 - [ ] Move scancode IRQ handler + queue behind a capability
 - [ ] Userspace keyboard server reads port `0x60` via port cap
-- [ ] Shell reads keys via IPC instead of syscall 1
+- [x] Shell reads keys via IPC instead of syscall 1 (in-kernel for now)
+- [x] Remove syscall 1
 - [ ] (Optional) keep IRQ demux in kernel, deliver scancodes via IPC
 
 ### Serial

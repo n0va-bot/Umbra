@@ -197,6 +197,7 @@ pub const RTC_SERVER: EndpointId = EndpointId(2);
 pub const PCI_SERVER: EndpointId = EndpointId(3);
 pub const POWER_SERVER: EndpointId = EndpointId(4);
 pub const KEYBOARD_SERVER: EndpointId = EndpointId(5);
+pub const TICK_SERVER: EndpointId = EndpointId(6);
 
 /// Message tags for framebuffer service
 pub const FB_WRITE_CHAR: u32 = 1;
@@ -206,6 +207,8 @@ pub const FB_WRITE_STRING: u32 = 4;
 pub const RTC_GET_TIME: u32 = 1;
 pub const PCI_SCAN_BUSES: u32 = 1;
 pub const POWER_OFF: u32 = 1;
+pub const KB_GET_SCANCODE: u32 = 1;
+pub const TICK_GET: u32 = 1;
 
 /// Global IPC state
 pub struct IpcState {
@@ -234,6 +237,14 @@ impl IpcState {
 
     pub fn recv(&mut self, from: EndpointId) -> Option<Message> {
         self.registry.recv(from)
+    }
+
+    pub fn handle_kernel_call(&self, to: EndpointId, send_msg: &Message) -> Option<Message> {
+        match to.0 {
+            5 => self.handle_keyboard_call(send_msg),
+            6 => self.handle_tick_call(send_msg),
+            _ => None,
+        }
     }
 
     /// Handle a message for an in-kernel service
@@ -325,6 +336,31 @@ impl IpcState {
                 true
             }
             _ => false,
+        }
+    }
+
+    fn handle_keyboard_call(&self, msg: &Message) -> Option<Message> {
+        match msg.tag {
+            KB_GET_SCANCODE => {
+                if let Ok(queue) = crate::task::keyboard::SCANCODE_QUEUE.try_get() {
+                    if let Some(scancode) = queue.pop() {
+                        return Some(Message::new(0, &[scancode]));
+                    }
+                }
+                Some(Message::new(0, &[u64::MAX as u8]))
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_tick_call(&self, msg: &Message) -> Option<Message> {
+        match msg.tag {
+            TICK_GET => {
+                let ticks = crate::interrupts::TICKS.load(core::sync::atomic::Ordering::Relaxed);
+                let bytes = ticks.to_le_bytes();
+                Some(Message::new(0, &bytes))
+            }
+            _ => None,
         }
     }
 }

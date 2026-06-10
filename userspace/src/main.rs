@@ -25,6 +25,13 @@ impl Message {
         msg.data[..copy_len].copy_from_slice(&data[..copy_len]);
         msg
     }
+
+    fn empty() -> Self {
+        Self {
+            tag: 0,
+            data: [0; IPC_MSG_DATA_SIZE],
+        }
+    }
 }
 
 // Well-known endpoint IDs
@@ -32,6 +39,8 @@ const FB_SERVER: usize = 1;
 const RTC_SERVER: usize = 2;
 const PCI_SERVER: usize = 3;
 const POWER_SERVER: usize = 4;
+const KEYBOARD_SERVER: usize = 5;
+const TICK_SERVER: usize = 6;
 
 // Framebuffer message tags
 const FB_WRITE_CHAR: u32 = 1;
@@ -41,9 +50,13 @@ const FB_WRITE_STRING: u32 = 4;
 const RTC_GET_TIME: u32 = 1;
 const PCI_SCAN_BUSES: u32 = 1;
 const POWER_OFF: u32 = 1;
+const KB_GET_SCANCODE: u32 = 1;
+const TICK_GET: u32 = 1;
 
 // IPC syscall numbers
 const SYS_IPC_SEND: u64 = 100;
+const SYS_IPC_RECV: u64 = 101;
+const SYS_IPC_CALL: u64 = 102;
 
 unsafe fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
     let result = syscall(
@@ -51,6 +64,21 @@ unsafe fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
         endpoint as u64,
         msg as *const Message as u64,
         0,
+        0,
+        0,
+    );
+    match result {
+        0 => Ok(()),
+        _ => Err(()),
+    }
+}
+
+unsafe fn ipc_call(endpoint: usize, send_msg: &Message, recv_msg: &mut Message) -> Result<(), ()> {
+    let result = syscall(
+        SYS_IPC_CALL,
+        endpoint as u64,
+        send_msg as *const Message as u64,
+        recv_msg as *mut Message as u64,
         0,
         0,
     );
@@ -154,17 +182,31 @@ unsafe fn sys_yield() -> u64 {
     syscall(7, 0, 0, 0, 0, 0)
 }
 
-unsafe fn sys_read_ticks() -> u64 {
-    syscall(3, 0, 0, 0, 0, 0)
+fn sys_read_ticks() -> u64 {
+    let mut request = Message::new(TICK_GET, &[]);
+    let mut response = Message::empty();
+    unsafe {
+        if ipc_call(TICK_SERVER, &request, &mut response).is_ok() {
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(&response.data[..8]);
+            return u64::from_le_bytes(bytes);
+        }
+    }
+    0
 }
 
-unsafe fn sys_read_scancode() -> Option<u8> {
-    let scancode = syscall(1, 0, 0, 0, 0, 0);
-    if scancode == u64::MAX {
-        None
-    } else {
-        Some(scancode as u8)
+fn sys_read_scancode() -> Option<u8> {
+    let mut request = Message::new(KB_GET_SCANCODE, &[]);
+    let mut response = Message::empty();
+    unsafe {
+        if ipc_call(KEYBOARD_SERVER, &request, &mut response).is_ok() {
+            if response.data[0] == u64::MAX as u8 {
+                return None;
+            }
+            return Some(response.data[0]);
+        }
     }
+    None
 }
 
 unsafe fn sys_exit() -> ! {
@@ -198,10 +240,10 @@ pub extern "C" fn _start() -> ! {
     let mut len = 0;
 
     let mut cursor_visible = false;
-    let mut last_blink = unsafe { sys_read_ticks() };
+    let mut last_blink = sys_read_ticks();
 
     loop {
-        if let Some(scancode) = unsafe { sys_read_scancode() } {
+        if let Some(scancode) = sys_read_scancode() {
             if cursor_visible {
                 fb_backspace();
                 cursor_visible = false;
@@ -253,9 +295,9 @@ pub extern "C" fn _start() -> ! {
                     }
                 }
             }
-            last_blink = unsafe { sys_read_ticks() };
+            last_blink = sys_read_ticks();
         } else {
-            let now = unsafe { sys_read_ticks() };
+            let now = sys_read_ticks();
             if now.wrapping_sub(last_blink) >= 9 {
                 if cursor_visible {
                     fb_backspace();
