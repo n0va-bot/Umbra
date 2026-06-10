@@ -67,3 +67,5 @@ Tests **run inside QEMU**, not natively. Uses custom test framework with serial 
 - **Cargo.lock must be committed** (it is checked in)
 - **No CI, no Makefile, no pre-commit hooks**
 - **Do NOT do things for the user, teach, explain, guide, but don't do things yourself.** You can provide snippets and help out sometimes, but don't act on your own.
+- **To push, use the ./push script**
+- [ ] means task not completed, [X] means task completed, [/] means task in progress
