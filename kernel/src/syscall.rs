@@ -97,24 +97,6 @@ extern "C" fn syscall_dispatch(
             u64::MAX
         }
         3 => crate::interrupts::TICKS.load(core::sync::atomic::Ordering::Relaxed),
-        4 => {
-            crate::acpi::power_off();
-            0
-        }
-        5 => {
-            let mut cmos = crate::cmos::Cmos::new();
-            let (year, month, day, hours, minutes, seconds) = cmos.read_time();
-            (year as u64)
-                | ((month as u64) << 8)
-                | ((day as u64) << 16)
-                | ((hours as u64) << 24)
-                | ((minutes as u64) << 32)
-                | ((seconds as u64) << 40)
-        }
-        6 => {
-            crate::pci::scan_buses();
-            0
-        }
         7 => {
             let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
             if current != 0 {

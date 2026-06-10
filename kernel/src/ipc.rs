@@ -203,6 +203,9 @@ pub const FB_WRITE_CHAR: u32 = 1;
 pub const FB_BACKSPACE: u32 = 2;
 pub const FB_CLEAR_SCREEN: u32 = 3;
 pub const FB_WRITE_STRING: u32 = 4;
+pub const RTC_GET_TIME: u32 = 1;
+pub const PCI_SCAN_BUSES: u32 = 1;
+pub const POWER_OFF: u32 = 1;
 
 /// Global IPC state
 pub struct IpcState {
@@ -236,10 +239,10 @@ impl IpcState {
     /// Handle a message for an in-kernel service
     pub fn handle_kernel_service(&self, to: EndpointId, msg: &Message) -> bool {
         match to.0 {
-            1 => {
-                // FB_SERVER
-                self.handle_fb_message(msg)
-            }
+            1 => self.handle_fb_message(msg),
+            2 => self.handle_rtc_message(msg),
+            3 => self.handle_pci_message(msg),
+            4 => self.handle_power_message(msg),
             _ => false,
         }
     }
@@ -247,7 +250,7 @@ impl IpcState {
     /// Handle framebuffer messages in-kernel
     fn handle_fb_message(&self, msg: &Message) -> bool {
         use crate::framebuffer;
-        
+
         match msg.tag {
             FB_WRITE_CHAR => {
                 if !msg.data.is_empty() {
@@ -284,6 +287,46 @@ impl IpcState {
             _ => false,
         }
     }
+
+    fn handle_rtc_message(&self, msg: &Message) -> bool {
+        match msg.tag {
+            RTC_GET_TIME => {
+                let mut cmos = crate::cmos::Cmos::new();
+                let (year, month, day, hours, minutes, seconds) = cmos.read_time();
+                crate::println!(
+                    "{:02}:{:02}:{:02} {:04}-{:02}-{:02}",
+                    hours,
+                    minutes,
+                    seconds,
+                    2000 + (year as u16),
+                    month,
+                    day
+                );
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_pci_message(&self, msg: &Message) -> bool {
+        match msg.tag {
+            PCI_SCAN_BUSES => {
+                crate::pci::scan_buses();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_power_message(&self, msg: &Message) -> bool {
+        match msg.tag {
+            POWER_OFF => {
+                crate::acpi::power_off();
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Global IPC state
@@ -310,6 +353,6 @@ impl Capability {
     }
 
     pub fn is_null(&self) -> bool {
-        self.0 .0 == usize::MAX
+        self.0.0 == usize::MAX
     }
 }

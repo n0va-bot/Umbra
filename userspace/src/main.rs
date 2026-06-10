@@ -17,7 +17,10 @@ struct Message {
 
 impl Message {
     fn new(tag: u32, data: &[u8]) -> Self {
-        let mut msg = Self { tag, data: [0; IPC_MSG_DATA_SIZE] };
+        let mut msg = Self {
+            tag,
+            data: [0; IPC_MSG_DATA_SIZE],
+        };
         let copy_len = data.len().min(IPC_MSG_DATA_SIZE);
         msg.data[..copy_len].copy_from_slice(&data[..copy_len]);
         msg
@@ -26,12 +29,18 @@ impl Message {
 
 // Well-known endpoint IDs
 const FB_SERVER: usize = 1;
+const RTC_SERVER: usize = 2;
+const PCI_SERVER: usize = 3;
+const POWER_SERVER: usize = 4;
 
 // Framebuffer message tags
 const FB_WRITE_CHAR: u32 = 1;
 const FB_BACKSPACE: u32 = 2;
 const FB_CLEAR_SCREEN: u32 = 3;
 const FB_WRITE_STRING: u32 = 4;
+const RTC_GET_TIME: u32 = 1;
+const PCI_SCAN_BUSES: u32 = 1;
+const POWER_OFF: u32 = 1;
 
 // IPC syscall numbers
 const SYS_IPC_SEND: u64 = 100;
@@ -72,22 +81,51 @@ unsafe fn syscall(n: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64)
 
 fn fb_send_char(byte: u8) {
     let msg = Message::new(FB_WRITE_CHAR, &[byte]);
-    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
+    unsafe {
+        let _ = ipc_send(FB_SERVER, &msg);
+    }
 }
 
 fn fb_backspace() {
     let msg = Message::new(FB_BACKSPACE, &[]);
-    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
+    unsafe {
+        let _ = ipc_send(FB_SERVER, &msg);
+    }
 }
 
 fn fb_clear_screen() {
     let msg = Message::new(FB_CLEAR_SCREEN, &[]);
-    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
+    unsafe {
+        let _ = ipc_send(FB_SERVER, &msg);
+    }
 }
 
 fn fb_write_str(s: &str) {
     let msg = Message::new(FB_WRITE_STRING, s.as_bytes());
-    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
+    unsafe {
+        let _ = ipc_send(FB_SERVER, &msg);
+    }
+}
+
+fn rtc_get_time() {
+    let msg = Message::new(RTC_GET_TIME, &[]);
+    unsafe {
+        let _ = ipc_send(RTC_SERVER, &msg);
+    }
+}
+
+fn pci_scan_buses() {
+    let msg = Message::new(PCI_SCAN_BUSES, &[]);
+    unsafe {
+        let _ = ipc_send(PCI_SERVER, &msg);
+    }
+}
+
+fn power_off() {
+    let msg = Message::new(POWER_OFF, &[]);
+    unsafe {
+        let _ = ipc_send(POWER_SERVER, &msg);
+    }
 }
 
 struct Stdout;
@@ -134,24 +172,16 @@ unsafe fn sys_exit() -> ! {
     loop {}
 }
 
-unsafe fn sys_poweroff() {
-    syscall(4, 0, 0, 0, 0, 0);
+fn sys_poweroff() {
+    power_off();
 }
 
-unsafe fn sys_date() -> (u8, u8, u8, u8, u8, u8) {
-    let packed = syscall(5, 0, 0, 0, 0, 0);
-    (
-        (packed & 0xFF) as u8,
-        ((packed >> 8) & 0xFF) as u8,
-        ((packed >> 16) & 0xFF) as u8,
-        ((packed >> 24) & 0xFF) as u8,
-        ((packed >> 32) & 0xFF) as u8,
-        ((packed >> 40) & 0xFF) as u8,
-    )
+fn sys_date() {
+    rtc_get_time();
 }
 
-unsafe fn sys_lspci() {
-    syscall(6, 0, 0, 0, 0, 0);
+fn sys_lspci() {
+    pci_scan_buses();
 }
 
 #[unsafe(no_mangle)]
@@ -268,18 +298,13 @@ fn process_command(cmd: &str) {
             fb_clear_screen();
         }
         "poweroff" => {
-            unsafe { sys_poweroff() };
+            sys_poweroff();
         }
         "date" => {
-            let (year, month, day, hours, minutes, seconds) = unsafe { sys_date() };
-            println!(
-                "{:02}:{:02}:{:02} {:04}-{:02}-{:02}",
-                hours, minutes, seconds,
-                2000 + (year as u16), month, day
-            );
+            sys_date();
         }
         "lspci" => {
-            unsafe { sys_lspci() };
+            sys_lspci();
         }
         "exit" => {
             unsafe { sys_exit() };
