@@ -16,3 +16,7 @@
   8. [ ] btrfs
   9. [ ] bcachefs
   10. [ ] ZFS
+- [ ] ZSH
+- [ ] Graphics
+- [ ] GUI
+- [ ] Nice GUI
