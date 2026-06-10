@@ -67,8 +67,9 @@
 - [x] `ipc_send(endpoint_cap, msg)` syscall
 - [x] `ipc_recv(endpoint_cap, msg)` syscall (block process until message arrives)
 - [x] `ipc_call(endpoint_cap, msg)` — send + wait for reply in one syscall
+- [x] Port existing shell operations to IPC calls against in-kernel services
 - [ ] Port existing shell operations to IPC calls against userspace servers
-- [ ] Remove the `match syscall_nr` dispatch table
+- [ ] Remove the `match syscall_nr` dispatch table for remaining syscalls (0, 1, 2, 3)
 
 ---
 
@@ -87,21 +88,21 @@
 ### CMOS / RTC → userspace `rtc`
 - [ ] Port-I/O capability for ports `0x70`/`0x71`
 - [ ] Move `cmos.rs` logic into userspace `rtc` process
-- [ ] Shell `date` command → IPC to rtc server
-- [ ] Remove syscall 5
+- [x] Shell `date` command → IPC to rtc server (in-kernel for now)
+- [x] Remove syscall 5
 
 ### PCI → userspace `pci-arbiter`
 - [ ] Port-I/O capability for `0xCF8`/`0xCFC`
 - [ ] Move `pci.rs` bus walk into userspace
 - [ ] Hand out per-device capabilities to requesters
-- [ ] Shell `lspci` → IPC to pci-arbiter
-- [ ] Remove syscall 6
+- [x] Shell `lspci` → IPC to pci-arbiter (in-kernel for now)
+- [x] Remove syscall 6
 
 ### ACPI power → userspace power service
 - [ ] Port-I/O cap for PM1a control register
 - [ ] Move `acpi::power_off` into userspace
-- [ ] Shell `poweroff` → IPC to power service
-- [ ] Remove syscall 4
+- [x] Shell `poweroff` → IPC to power service (in-kernel for now)
+- [x] Remove syscall 4
 
 ### Keyboard → userspace `ps2-kbd` (or keep in-kernel short-term)
 - [ ] Move scancode IRQ handler + queue behind a capability
