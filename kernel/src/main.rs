@@ -66,6 +66,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::acpi::init(phys_mem_offset.as_u64());
     umbra::serial_println!("[kernel] acpi initialized");
     umbra::syscall::init();
+    umbra::ipc::init();
+    umbra::serial_println!("[kernel] ipc initialized");
     umbra::task::keyboard::ScancodeStream::init_scancode_queue();
 
     // Load userspace shell

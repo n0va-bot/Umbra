@@ -62,11 +62,11 @@
 - [x] `8` — exit (process switch)
 
 ### IPC design & implementation
-- [/] Define message format (fixed-size buffer, e.g. 64 bytes + tag)
-- [ ] Kernel endpoint registry (per-process send/receive queues)
-- [ ] `ipc_send(endpoint_cap, msg)` syscall
-- [ ] `ipc_recv(endpoint_cap, msg)` syscall (block process until message arrives)
-- [ ] `ipc_call(endpoint_cap, msg)` — send + wait for reply in one syscall
+- [x] Define message format (fixed-size buffer, e.g. 64 bytes + tag)
+- [x] Kernel endpoint registry (per-process send/receive queues)
+- [x] `ipc_send(endpoint_cap, msg)` syscall
+- [x] `ipc_recv(endpoint_cap, msg)` syscall (block process until message arrives)
+- [x] `ipc_call(endpoint_cap, msg)` — send + wait for reply in one syscall
 - [ ] Port existing shell operations to IPC calls against userspace servers
 - [ ] Remove the `match syscall_nr` dispatch table
 

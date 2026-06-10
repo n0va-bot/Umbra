@@ -1,8 +1,55 @@
 #![no_std]
 #![no_main]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 use core::arch::asm;
 use core::panic::PanicInfo;
+
+// IPC constants matching kernel
+const IPC_MSG_DATA_SIZE: usize = 64;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct Message {
+    tag: u32,
+    data: [u8; IPC_MSG_DATA_SIZE],
+}
+
+impl Message {
+    fn new(tag: u32, data: &[u8]) -> Self {
+        let mut msg = Self { tag, data: [0; IPC_MSG_DATA_SIZE] };
+        let copy_len = data.len().min(IPC_MSG_DATA_SIZE);
+        msg.data[..copy_len].copy_from_slice(&data[..copy_len]);
+        msg
+    }
+}
+
+// Well-known endpoint IDs
+const FB_SERVER: usize = 1;
+
+// Framebuffer message tags
+const FB_WRITE_CHAR: u32 = 1;
+const FB_BACKSPACE: u32 = 2;
+const FB_CLEAR_SCREEN: u32 = 3;
+const FB_WRITE_STRING: u32 = 4;
+
+// IPC syscall numbers
+const SYS_IPC_SEND: u64 = 100;
+
+unsafe fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
+    let result = syscall(
+        SYS_IPC_SEND,
+        endpoint as u64,
+        msg as *const Message as u64,
+        0,
+        0,
+        0,
+    );
+    match result {
+        0 => Ok(()),
+        _ => Err(()),
+    }
+}
 
 #[inline(always)]
 unsafe fn syscall(n: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> u64 {
@@ -23,27 +70,32 @@ unsafe fn syscall(n: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64)
     ret
 }
 
-pub fn sys_write(byte: u8) {
-    unsafe { syscall(0, byte as u64, 0, 0, 0, 0) };
+fn fb_send_char(byte: u8) {
+    let msg = Message::new(FB_WRITE_CHAR, &[byte]);
+    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
 }
 
-pub unsafe fn sys_write_str(ptr: *const u8, len: usize) -> u64 {
-    syscall(9, ptr as u64, len as u64, 0, 0, 0)
+fn fb_backspace() {
+    let msg = Message::new(FB_BACKSPACE, &[]);
+    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
 }
 
-unsafe fn sys_yield() -> u64 {
-    syscall(7, 0, 0, 0, 0, 0)
+fn fb_clear_screen() {
+    let msg = Message::new(FB_CLEAR_SCREEN, &[]);
+    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
+}
+
+fn fb_write_str(s: &str) {
+    let msg = Message::new(FB_WRITE_STRING, s.as_bytes());
+    unsafe { let _ = ipc_send(FB_SERVER, &msg); }
 }
 
 struct Stdout;
 
 impl core::fmt::Write for Stdout {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let ret = unsafe { sys_write_str(s.as_ptr(), s.len()) };
-        if ret == u64::MAX {
-            for b in s.bytes() {
-                sys_write(b);
-            }
+        for byte in s.bytes() {
+            fb_send_char(byte);
         }
         Ok(())
     }
@@ -60,6 +112,48 @@ macro_rules! println {
     ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
 }
 
+unsafe fn sys_yield() -> u64 {
+    syscall(7, 0, 0, 0, 0, 0)
+}
+
+unsafe fn sys_read_ticks() -> u64 {
+    syscall(3, 0, 0, 0, 0, 0)
+}
+
+unsafe fn sys_read_scancode() -> Option<u8> {
+    let scancode = syscall(1, 0, 0, 0, 0, 0);
+    if scancode == u64::MAX {
+        None
+    } else {
+        Some(scancode as u8)
+    }
+}
+
+unsafe fn sys_exit() -> ! {
+    syscall(8, 0, 0, 0, 0, 0);
+    loop {}
+}
+
+unsafe fn sys_poweroff() {
+    syscall(4, 0, 0, 0, 0, 0);
+}
+
+unsafe fn sys_date() -> (u8, u8, u8, u8, u8, u8) {
+    let packed = syscall(5, 0, 0, 0, 0, 0);
+    (
+        (packed & 0xFF) as u8,
+        ((packed >> 8) & 0xFF) as u8,
+        ((packed >> 16) & 0xFF) as u8,
+        ((packed >> 24) & 0xFF) as u8,
+        ((packed >> 32) & 0xFF) as u8,
+        ((packed >> 40) & 0xFF) as u8,
+    )
+}
+
+unsafe fn sys_lspci() {
+    syscall(6, 0, 0, 0, 0, 0);
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     print!("> ");
@@ -74,17 +168,16 @@ pub extern "C" fn _start() -> ! {
     let mut len = 0;
 
     let mut cursor_visible = false;
-    let mut last_blink = unsafe { syscall(3, 0, 0, 0, 0, 0) };
+    let mut last_blink = unsafe { sys_read_ticks() };
 
     loop {
-        let scancode = unsafe { syscall(1, 0, 0, 0, 0, 0) };
-        if scancode != core::u64::MAX {
+        if let Some(scancode) = unsafe { sys_read_scancode() } {
             if cursor_visible {
-                print!("\u{8}");
+                fb_backspace();
                 cursor_visible = false;
             }
 
-            if let Ok(Some(key_event)) = keyboard.add_byte(scancode as u8) {
+            if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
                 if let Some(key) = keyboard.process_keyevent(key_event) {
                     match key {
                         pc_keyboard::DecodedKey::Unicode(character) => match character {
@@ -100,7 +193,7 @@ pub extern "C" fn _start() -> ! {
                             '\u{8}' | '\x7f' => {
                                 if len > 0 {
                                     len -= 1;
-                                    print!("\u{8}");
+                                    fb_backspace();
                                 }
                             }
                             c if c.is_ascii_graphic() || c == ' ' => {
@@ -122,7 +215,7 @@ pub extern "C" fn _start() -> ! {
                             pc_keyboard::KeyCode::Backspace => {
                                 if len > 0 {
                                     len -= 1;
-                                    print!("\u{8}");
+                                    fb_backspace();
                                 }
                             }
                             _ => {}
@@ -130,14 +223,14 @@ pub extern "C" fn _start() -> ! {
                     }
                 }
             }
-            last_blink = unsafe { syscall(3, 0, 0, 0, 0, 0) };
+            last_blink = unsafe { sys_read_ticks() };
         } else {
-            let now = unsafe { syscall(3, 0, 0, 0, 0, 0) };
+            let now = unsafe { sys_read_ticks() };
             if now.wrapping_sub(last_blink) >= 9 {
                 if cursor_visible {
-                    print!("\u{8}");
+                    fb_backspace();
                 } else {
-                    print!("_");
+                    fb_send_char(b'_');
                 }
                 cursor_visible = !cursor_visible;
                 last_blink = now;
@@ -172,34 +265,24 @@ fn process_command(cmd: &str) {
             println!("{}", rest);
         }
         "clear" => {
-            unsafe { syscall(2, 0, 0, 0, 0, 0) };
+            fb_clear_screen();
         }
         "poweroff" => {
-            unsafe { syscall(4, 0, 0, 0, 0, 0) };
+            unsafe { sys_poweroff() };
         }
         "date" => {
-            let packed = unsafe { syscall(5, 0, 0, 0, 0, 0) };
-            let year = packed & 0xFF;
-            let month = (packed >> 8) & 0xFF;
-            let day = (packed >> 16) & 0xFF;
-            let hours = (packed >> 24) & 0xFF;
-            let minutes = (packed >> 32) & 0xFF;
-            let seconds = (packed >> 40) & 0xFF;
+            let (year, month, day, hours, minutes, seconds) = unsafe { sys_date() };
             println!(
                 "{:02}:{:02}:{:02} {:04}-{:02}-{:02}",
-                hours,
-                minutes,
-                seconds,
-                2000 + (year as u16),
-                month,
-                day
+                hours, minutes, seconds,
+                2000 + (year as u16), month, day
             );
         }
         "lspci" => {
-            unsafe { syscall(6, 0, 0, 0, 0, 0) };
+            unsafe { sys_lspci() };
         }
         "exit" => {
-            unsafe { syscall(8, 0, 0, 0, 0, 0) };
+            unsafe { sys_exit() };
         }
         _ => {
             println!("Unknown command: {}", command);

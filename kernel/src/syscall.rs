@@ -62,7 +62,7 @@ extern "C" fn syscall_entry() {
 extern "C" fn syscall_dispatch(
     rdi: u64,
     rsi: u64,
-    _rdx: u64,
+    rdx: u64,
     _rcx: u64,
     _r8: u64,
     _r9: u64,
@@ -88,14 +88,6 @@ extern "C" fn syscall_dispatch(
     }
 
     match syscall_nr {
-        0 => {
-            if rdi as u8 == 8 {
-                crate::framebuffer::backspace();
-            } else {
-                crate::print!("{}", rdi as u8 as char);
-            }
-            0
-        }
         1 => {
             if let Ok(queue) = crate::task::keyboard::SCANCODE_QUEUE.try_get() {
                 if let Some(scancode) = queue.pop() {
@@ -103,10 +95,6 @@ extern "C" fn syscall_dispatch(
                 }
             }
             u64::MAX
-        }
-        2 => {
-            crate::framebuffer::clear_screen();
-            0
         }
         3 => crate::interrupts::TICKS.load(core::sync::atomic::Ordering::Relaxed),
         4 => {
@@ -148,27 +136,131 @@ extern "C" fn syscall_dispatch(
             }
             0
         }
-        9 => {
-            let ptr = x86_64::VirtAddr::new(rdi);
-            let len = rsi as usize;
-            if crate::process::validate_user_range(ptr, len).is_none() {
-                crate::serial_println!(
-                    "[syscall] 9: rejected invalid user buffer {:#X}..{:#X}",
-                    rdi,
-                    rdi.wrapping_add(len as u64)
-                );
+
+        // IPC syscalls
+        100 => {
+            // ipc_send(endpoint_id, message_ptr)
+            // rdi = endpoint_id, rsi = pointer to Message struct in user space
+            let endpoint_id = rdi as usize;
+            let msg_ptr = rsi as *const crate::ipc::Message;
+            
+            // Validate the message pointer is in user space
+            let msg_vaddr = x86_64::VirtAddr::new(rsi);
+            if crate::process::validate_user_range(msg_vaddr, core::mem::size_of::<crate::ipc::Message>()).is_none() {
+                crate::serial_println!("[syscall] 100: rejected invalid message pointer {:#X}", rsi);
                 return u64::MAX;
             }
-            let slice = unsafe { core::slice::from_raw_parts(rdi as *const u8, len) };
-            for &byte in slice {
-                if byte == 8 {
-                    crate::framebuffer::backspace();
-                } else {
-                    crate::print!("{}", byte as char);
+            
+            let msg = unsafe { &*msg_ptr };
+            let endpoint_id = crate::ipc::EndpointId(endpoint_id);
+            
+            let mut ipc_state = crate::ipc::IPC.lock();
+            
+            // Check if this is a message for an in-kernel service
+            if ipc_state.handle_kernel_service(endpoint_id, msg) {
+                return 0;
+            }
+            
+            // Otherwise, send to the endpoint registry
+            match ipc_state.send(endpoint_id, *msg) {
+                Ok(_) => 0,
+                Err(crate::ipc::SendError::InvalidEndpoint) => u64::MAX,
+                Err(crate::ipc::SendError::QueueFull(_)) => u64::MAX - 1,
+            }
+        }
+        101 => {
+            // ipc_recv(endpoint_id, message_ptr)
+            // rdi = endpoint_id, rsi = pointer to Message struct in user space (output)
+            let endpoint_id = crate::ipc::EndpointId(rdi as usize);
+            let msg_ptr = rsi as *mut crate::ipc::Message;
+            
+            // Validate the message pointer is in user space
+            let msg_vaddr = x86_64::VirtAddr::new(rsi);
+            if crate::process::validate_user_range(msg_vaddr, core::mem::size_of::<crate::ipc::Message>()).is_none() {
+                crate::serial_println!("[syscall] 101: rejected invalid message pointer {:#X}", rsi);
+                return u64::MAX;
+            }
+            
+            let mut ipc_state = crate::ipc::IPC.lock();
+            match ipc_state.recv(endpoint_id) {
+                Some(msg) => {
+                    unsafe { *msg_ptr = msg };
+                    0
+                }
+                None => {
+                    // Block the process until a message arrives
+                    let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+                    if current != 0 {
+                        // Mark as blocked and switch to kernel
+                        {
+                            let mut table = crate::process::PROCESSES.lock();
+                            if let Some(p) = table.get_mut(current) {
+                                p.state = crate::process::State::Blocked;
+                            }
+                        }
+                        unsafe { crate::process::switch_to(current, 0) };
+                    }
+                    u64::MAX // Indicate no message (shouldn't reach here after block)
                 }
             }
-            0
         }
+        102 => {
+            // ipc_call(endpoint_id, send_msg_ptr, recv_msg_ptr)
+            // rdi = endpoint_id, rsi = send message ptr, rdx = recv message ptr
+            // This is send + recv + reply in one shot
+            let endpoint_id = crate::ipc::EndpointId(rdi as usize);
+            let send_msg_ptr = rsi as *const crate::ipc::Message;
+            let recv_msg_ptr = rdx as *mut crate::ipc::Message;
+            
+            // Validate both pointers
+            let send_vaddr = x86_64::VirtAddr::new(rsi);
+            let recv_vaddr = x86_64::VirtAddr::new(rdx);
+            let msg_size = core::mem::size_of::<crate::ipc::Message>();
+            
+            if crate::process::validate_user_range(send_vaddr, msg_size).is_none() {
+                crate::serial_println!("[syscall] 102: rejected invalid send message pointer {:#X}", rsi);
+                return u64::MAX;
+            }
+            if crate::process::validate_user_range(recv_vaddr, msg_size).is_none() {
+                crate::serial_println!("[syscall] 102: rejected invalid recv message pointer {:#X}", rdx);
+                return u64::MAX;
+            }
+            
+            let send_msg = unsafe { &*send_msg_ptr };
+            
+            // First send
+            {
+                let mut ipc_state = crate::ipc::IPC.lock();
+                match ipc_state.send(endpoint_id, *send_msg) {
+                    Ok(_) => {}
+                    Err(_) => return u64::MAX,
+                }
+            }
+            
+            // Then receive (blocking)
+            let mut ipc_state = crate::ipc::IPC.lock();
+            match ipc_state.recv(endpoint_id) {
+                Some(msg) => {
+                    unsafe { *recv_msg_ptr = msg };
+                    0
+                }
+                None => {
+                    // Block the process
+                    let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+                    if current != 0 {
+                        {
+                            let mut table = crate::process::PROCESSES.lock();
+                            if let Some(p) = table.get_mut(current) {
+                                p.state = crate::process::State::Blocked;
+                            }
+                        }
+                        unsafe { crate::process::switch_to(current, 0) };
+                    }
+                    u64::MAX
+                }
+            }
+        }
+
         _ => 0,
     }
 }
