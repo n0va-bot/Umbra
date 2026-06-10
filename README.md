@@ -20,7 +20,7 @@ Okay, now that we're done with the disclaimers...
 
 ## What is Umbra?
 
-Umbra is a Unix-like (in some parts) x86_64 **only** (for now) operating system that aims to be ACTUALLY AT LEAST A BIT PROPERLY MADE, NOT LIKE ALL OF THESE OTHER OSES THAT JUST COPY HOW BADLY-DESIGNED LINUX OR WINDOWS IS
+Umbra is a Unix-like (in some parts) x86_64 **only** (for now, preferably ARM quite soon) operating system that aims to be ACTUALLY AT LEAST A BIT PROPERLY MADE, NOT LIKE ALL OF THESE OTHER OSES THAT JUST COPY HOW BADLY-DESIGNED LINUX OR WINDOWS IS
 
 ## Core principles/whatvere
 
