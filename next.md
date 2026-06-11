@@ -19,4 +19,4 @@
 - [ ] ZSH
 - [ ] Graphics
 - [ ] GUI
-- [ ] Nice GUI
+  - [ ] Nice GUI
