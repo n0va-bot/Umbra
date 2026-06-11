@@ -1,12 +1,8 @@
 use spin::Mutex;
 
 pub const IPC_MSG_DATA_SIZE: usize = 64;
-/// Import MAX_PROCESSES from process module
 use crate::process::MAX_PROCESSES;
-
-/// Maximum number of endpoints in the system
 pub const MAX_ENDPOINTS: usize = 32;
-/// Maximum number of pending messages per endpoint queue
 pub const MAX_PENDING_MESSAGES: usize = 16;
 
 #[repr(C)]
@@ -39,7 +35,6 @@ impl Default for Message {
     }
 }
 
-/// A message queue for a single endpoint (FIFO)
 #[derive(Debug)]
 pub struct MessageQueue {
     messages: [Option<Message>; MAX_PENDING_MESSAGES],
@@ -88,17 +83,14 @@ impl MessageQueue {
     }
 }
 
-/// Endpoint identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EndpointId(pub usize);
 
-/// An IPC endpoint with send and receive queues
 #[derive(Debug)]
 pub struct Endpoint {
     pub id: EndpointId,
     send_queue: MessageQueue,
     recv_queue: MessageQueue,
-    /// Process that owns the receive side of this endpoint
     owner: Option<usize>,
 }
 
@@ -129,7 +121,6 @@ impl Endpoint {
     }
 }
 
-/// Global endpoint registry
 pub struct EndpointRegistry {
     endpoints: [Option<Endpoint>; MAX_ENDPOINTS],
     next_id: usize,
@@ -169,7 +160,6 @@ impl EndpointRegistry {
         self.endpoints.get_mut(id.0).and_then(|e| e.take())
     }
 
-    /// Send a message to an endpoint (goes into its receive queue)
     pub fn send(&mut self, to: EndpointId, msg: Message) -> Result<(), SendError> {
         if let Some(endpoint) = self.get_mut(to) {
             endpoint.deliver(msg).map_err(|m| SendError::QueueFull(m))?;
@@ -179,7 +169,6 @@ impl EndpointRegistry {
         }
     }
 
-    /// Receive a message from an endpoint's send queue
     pub fn recv(&mut self, from: EndpointId) -> Option<Message> {
         self.get_mut(from).and_then(|e| e.recv())
     }
@@ -191,7 +180,6 @@ pub enum SendError {
     QueueFull(Message),
 }
 
-/// Well-known endpoint IDs for in-kernel services
 pub const FB_SERVER: EndpointId = EndpointId(1);
 pub const RTC_SERVER: EndpointId = EndpointId(2);
 pub const PCI_SERVER: EndpointId = EndpointId(3);
@@ -199,7 +187,6 @@ pub const POWER_SERVER: EndpointId = EndpointId(4);
 pub const KEYBOARD_SERVER: EndpointId = EndpointId(5);
 pub const TICK_SERVER: EndpointId = EndpointId(6);
 
-/// Message tags for framebuffer service
 pub const FB_WRITE_CHAR: u32 = 1;
 pub const FB_BACKSPACE: u32 = 2;
 pub const FB_CLEAR_SCREEN: u32 = 3;
@@ -210,11 +197,8 @@ pub const POWER_OFF: u32 = 1;
 pub const KB_GET_SCANCODE: u32 = 1;
 pub const TICK_GET: u32 = 1;
 
-/// Global IPC state
 pub struct IpcState {
     pub registry: EndpointRegistry,
-    /// Per-process pending send queues (for blocked sends)
-    /// Maps process index to a list of (target_endpoint, message) waiting to be delivered
     pub blocked_sends: [Option<(EndpointId, Message)>; MAX_PROCESSES],
 }
 
@@ -247,7 +231,6 @@ impl IpcState {
         }
     }
 
-    /// Handle a message for an in-kernel service
     pub fn handle_kernel_service(&self, to: EndpointId, msg: &Message) -> bool {
         match to.0 {
             1 => self.handle_fb_message(msg),
@@ -258,7 +241,6 @@ impl IpcState {
         }
     }
 
-    /// Handle framebuffer messages in-kernel
     fn handle_fb_message(&self, msg: &Message) -> bool {
         use crate::framebuffer;
 
@@ -365,20 +347,14 @@ impl IpcState {
     }
 }
 
-/// Global IPC state
 pub static IPC: Mutex<IpcState> = Mutex::new(IpcState::new());
 
-pub fn init() {
-    // The IPC state is already initialized statically
-    // This function is kept for initialization order tracking
-}
+pub fn init() {}
 
-/// Syscall numbers for IPC (these will replace the old numbered syscalls)
 pub const SYS_IPC_SEND: u64 = 100;
 pub const SYS_IPC_RECV: u64 = 101;
 pub const SYS_IPC_CALL: u64 = 102;
 
-/// IPC capability - represents permission to use an endpoint
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capability(pub EndpointId);

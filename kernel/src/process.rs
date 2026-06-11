@@ -72,8 +72,6 @@ pub struct Process {
     pub state: State,
     pub cr3: PhysAddr,
     pub kernel_stack_top: VirtAddr,
-    /// Index into the static [`KERNEL_STACK_POOL`] backing this process's
-    /// kernel stack. Required to return the slot to the pool on teardown.
     pub kernel_stack_slot: usize,
     pub kernel_rsp: VirtAddr,
     pub saved: SavedRegs,
@@ -85,18 +83,8 @@ const MAX_KERNEL_STACKS: usize = MAX_PROCESSES;
 static mut KERNEL_STACK_POOL: [u8; KERNEL_STACK_SIZE * MAX_KERNEL_STACKS] =
     [0; KERNEL_STACK_SIZE * MAX_KERNEL_STACKS];
 
-/// Bit `i` set means kernel stack slot `i` is in use.
-///
-/// A bitmap (rather than a forward counter) lets us hand slots back to the
-/// pool on process teardown. Only ever touched from the kernel process's
-/// scheduler loop, which is single-threaded by construction.
 static mut KERNEL_STACK_BITMAP: u16 = 0;
 
-/// Allocate a kernel stack from the static pool.
-///
-/// Returns `(slot_index, stack_top_virt_addr)`. The caller is responsible
-/// for storing `slot_index` in the [`Process`] so it can be passed to
-/// [`free_kernel_stack`] on teardown.
 pub fn allocate_kernel_stack() -> (usize, VirtAddr) {
     unsafe {
         for slot in 0..MAX_KERNEL_STACKS {
@@ -111,8 +99,6 @@ pub fn allocate_kernel_stack() -> (usize, VirtAddr) {
     panic!("kernel stack pool exhausted");
 }
 
-/// Return a kernel stack slot to the pool. The slot must currently be in
-/// use (i.e. allocated and not yet freed).
 pub fn free_kernel_stack(slot: usize) {
     assert!(
         slot < MAX_KERNEL_STACKS,

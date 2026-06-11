@@ -103,14 +103,9 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
             0
         }
 
-        // IPC syscalls
         100 => {
-            // ipc_send(endpoint_id, message_ptr)
-            // rdi = endpoint_id, rsi = pointer to Message struct in user space
             let endpoint_id = rdi as usize;
             let msg_ptr = rsi as *const crate::ipc::Message;
-
-            // Validate the message pointer is in user space
             let msg_vaddr = x86_64::VirtAddr::new(rsi);
             if crate::process::validate_user_range(
                 msg_vaddr,
@@ -129,13 +124,9 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
             let endpoint_id = crate::ipc::EndpointId(endpoint_id);
 
             let mut ipc_state = crate::ipc::IPC.lock();
-
-            // Check if this is a message for an in-kernel service
             if ipc_state.handle_kernel_service(endpoint_id, msg) {
                 return 0;
             }
-
-            // Otherwise, send to the endpoint registry
             match ipc_state.send(endpoint_id, *msg) {
                 Ok(_) => 0,
                 Err(crate::ipc::SendError::InvalidEndpoint) => u64::MAX,
@@ -143,12 +134,8 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
             }
         }
         101 => {
-            // ipc_recv(endpoint_id, message_ptr)
-            // rdi = endpoint_id, rsi = pointer to Message struct in user space (output)
             let endpoint_id = crate::ipc::EndpointId(rdi as usize);
             let msg_ptr = rsi as *mut crate::ipc::Message;
-
-            // Validate the message pointer is in user space
             let msg_vaddr = x86_64::VirtAddr::new(rsi);
             if crate::process::validate_user_range(
                 msg_vaddr,
@@ -170,10 +157,8 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                     0
                 }
                 None => {
-                    // Block the process until a message arrives
                     let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
                     if current != 0 {
-                        // Mark as blocked and switch to kernel
                         {
                             let mut table = crate::process::PROCESSES.lock();
                             if let Some(p) = table.get_mut(current) {
@@ -182,19 +167,14 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                         }
                         unsafe { crate::process::switch_to(current, 0) };
                     }
-                    u64::MAX // Indicate no message (shouldn't reach here after block)
+                    u64::MAX
                 }
             }
         }
         102 => {
-            // ipc_call(endpoint_id, send_msg_ptr, recv_msg_ptr)
-            // rdi = endpoint_id, rsi = send message ptr, rdx = recv message ptr
-            // This is send + recv + reply in one shot
             let endpoint_id = crate::ipc::EndpointId(rdi as usize);
             let send_msg_ptr = rsi as *const crate::ipc::Message;
             let recv_msg_ptr = rdx as *mut crate::ipc::Message;
-
-            // Validate both pointers
             let send_vaddr = x86_64::VirtAddr::new(rsi);
             let recv_vaddr = x86_64::VirtAddr::new(rdx);
             let msg_size = core::mem::size_of::<crate::ipc::Message>();
@@ -233,8 +213,6 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                     Err(_) => return u64::MAX,
                 }
             }
-
-            // Then receive (blocking)
             let mut ipc_state = crate::ipc::IPC.lock();
             match ipc_state.recv(endpoint_id) {
                 Some(msg) => {
@@ -242,7 +220,6 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                     0
                 }
                 None => {
-                    // Block the process
                     let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
                     if current != 0 {
                         {

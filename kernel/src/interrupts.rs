@@ -41,8 +41,6 @@ pub static TICKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64:
 pub static RESCHEDULE_NEEDED: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
-/// Process table index the timer handler most recently picked to run next.
-/// `usize::MAX` means "no decision pending" (consumed).
 pub static PENDING_NEXT: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(usize::MAX);
 

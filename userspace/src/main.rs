@@ -5,7 +5,6 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 
-// IPC constants matching kernel
 const IPC_MSG_DATA_SIZE: usize = 64;
 
 #[repr(C)]
@@ -33,16 +32,12 @@ impl Message {
         }
     }
 }
-
-// Well-known endpoint IDs
 const FB_SERVER: usize = 1;
 const RTC_SERVER: usize = 2;
 const PCI_SERVER: usize = 3;
 const POWER_SERVER: usize = 4;
 const KEYBOARD_SERVER: usize = 5;
 const TICK_SERVER: usize = 6;
-
-// Framebuffer message tags
 const FB_WRITE_CHAR: u32 = 1;
 const FB_BACKSPACE: u32 = 2;
 const FB_CLEAR_SCREEN: u32 = 3;
@@ -52,8 +47,6 @@ const PCI_SCAN_BUSES: u32 = 1;
 const POWER_OFF: u32 = 1;
 const KB_GET_SCANCODE: u32 = 1;
 const TICK_GET: u32 = 1;
-
-// IPC syscall numbers
 const SYS_IPC_SEND: u64 = 100;
 const SYS_IPC_RECV: u64 = 101;
 const SYS_IPC_CALL: u64 = 102;
