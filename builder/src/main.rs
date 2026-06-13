@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -26,23 +27,41 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("Building userspace...");
-    let userspace_dir = workspace_root.join("userspace");
-    let userspace_binary = workspace_root
+    println!("Building userspace servers...");
+    for server in &["userspace", "keyboard-server", "tick-server"] {
+        let dir = workspace_root.join(server);
+        let status = Command::new("cargo")
+            .arg("build")
+            .current_dir(&dir)
+            .status()
+            .expect(&format!("Failed to run cargo build for {}", server));
+
+        if !status.success() {
+            std::process::exit(1);
+        }
+    }
+
+    println!("Packaging initramfs...");
+    let initramfs_path = workspace_root.join("target").join("initramfs.tar");
+    let tar_file = File::create(&initramfs_path).expect("Failed to create initramfs");
+    let mut tar_builder = tar::Builder::new(tar_file);
+
+    let bin_dir = workspace_root
         .join("target")
         .join("x86_64-unknown-none")
-        .join("debug")
-        .join("userspace");
+        .join("debug");
 
-    let status = Command::new("cargo")
-        .arg("build")
-        .current_dir(&userspace_dir)
-        .status()
-        .expect("Failed to run cargo build for userspace");
+    tar_builder
+        .append_path_with_name(bin_dir.join("userspace"), "userspace")
+        .expect("Failed to append userspace");
+    tar_builder
+        .append_path_with_name(bin_dir.join("keyboard-server"), "keyboard-server")
+        .expect("Failed to append keyboard-server");
+    tar_builder
+        .append_path_with_name(bin_dir.join("tick-server"), "tick-server")
+        .expect("Failed to append tick-server");
 
-    if !status.success() {
-        std::process::exit(1);
-    }
+    tar_builder.finish().expect("Failed to finish tar builder");
 
     println!("Stripping kernel for bootloader image...");
     let stripped_kernel = workspace_root
@@ -69,7 +88,7 @@ fn main() {
 
     let mut bios_boot = bootloader::BiosBoot::new(&stripped_kernel);
     bios_boot.set_boot_config(&boot_config);
-    bios_boot.set_ramdisk(&userspace_binary);
+    bios_boot.set_ramdisk(&initramfs_path);
     bios_boot
         .create_disk_image(&bios_image)
         .expect("Failed to create BIOS disk image");

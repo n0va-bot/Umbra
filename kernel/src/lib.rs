@@ -22,6 +22,7 @@ pub mod pci;
 pub mod process;
 pub mod serial;
 pub mod syscall;
+pub mod tar;
 pub mod task;
 pub mod userspace;
 

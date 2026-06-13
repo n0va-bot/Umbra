@@ -1,5 +1,5 @@
 [workspace]
-members = ["kernel", "userspace", "builder"]
+members = ["kernel", "userspace", "builder", "keyboard-server", "tick-server"]
 default-members = ["builder"]
 resolver = "2"
 

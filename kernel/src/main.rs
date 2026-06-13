@@ -99,8 +99,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let ramdisk_len = boot_info.ramdisk_len as usize;
     let ramdisk = unsafe { core::slice::from_raw_parts(ramdisk_addr as *const u8, ramdisk_len) };
 
-    let _shell_index = process::spawn(ramdisk, &mut frame_allocator);
-    umbra::serial_println!("[kernel] shell spawned");
+    let archive = umbra::tar::TarArchive::new(ramdisk);
+    for entry in archive.iter() {
+        umbra::serial_println!("[kernel] found in initramfs: {}, size: {}", entry.name, entry.size);
+        if entry.size > 0 {
+            process::spawn(entry.data, &mut frame_allocator);
+            umbra::serial_println!("[kernel] {} spawned", entry.name);
+        }
+    }
 
     let mut executor = Executor::new();
 
