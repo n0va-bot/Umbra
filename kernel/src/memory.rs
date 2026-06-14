@@ -8,6 +8,9 @@ use alloc::vec::Vec;
 /// Global physical memory offset
 static mut PHYS_MEM_OFFSET: u64 = 0;
 
+pub static FRAME_ALLOCATOR: spin::Mutex<Option<BootInfoFrameAllocator>> = spin::Mutex::new(None);
+pub static INITRAMFS: spin::Mutex<Option<&'static [u8]>> = spin::Mutex::new(None);
+
 pub fn store_phys_mem_offset(offset: VirtAddr) {
     unsafe { PHYS_MEM_OFFSET = offset.as_u64() };
 }

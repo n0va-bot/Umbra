@@ -1,5 +1,12 @@
 [workspace]
-members = ["kernel", "userspace", "builder", "keyboard-server", "tick-server"]
+members = [
+    "kernel",
+    "userspace",
+    "builder",
+    "keyboard-server",
+    "tick-server",
+    "SerV",
+]
 default-members = ["builder"]
 resolver = "2"
 
@@ -13,5 +20,17 @@ panic = "abort"
 panic = "abort"
 
 [profile.dev.package.userspace]
+strip = "symbols"
+opt-level = "s"
+
+[profile.dev.package.SerV]
+strip = "symbols"
+opt-level = "s"
+
+[profile.dev.package.keyboard-server]
+strip = "symbols"
+opt-level = "s"
+
+[profile.dev.package.tick-server]
 strip = "symbols"
 opt-level = "s"

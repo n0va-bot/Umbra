@@ -28,7 +28,7 @@ fn main() {
     }
 
     println!("Building userspace servers...");
-    for server in &["userspace", "keyboard-server", "tick-server"] {
+    for server in &["SerV", "userspace", "keyboard-server", "tick-server"] {
         let dir = workspace_root.join(server);
         let status = Command::new("cargo")
             .arg("build")
@@ -51,6 +51,9 @@ fn main() {
         .join("x86_64-unknown-none")
         .join("debug");
 
+    tar_builder
+        .append_path_with_name(bin_dir.join("SerV"), "SerV")
+        .expect("Failed to append SerV");
     tar_builder
         .append_path_with_name(bin_dir.join("userspace"), "userspace")
         .expect("Failed to append userspace");

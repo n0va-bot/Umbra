@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "SerV"
+version = "0.1.0"
+
+[[package]]
 name = "acpi"
 version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -324,6 +328,9 @@ dependencies = [
 [[package]]
 name = "keyboard-server"
 version = "0.1.0"
+dependencies = [
+ "pc-keyboard",
+]
 
 [[package]]
 name = "lazy_static"

@@ -234,7 +234,59 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                 }
             }
         }
-
+        103 => {
+            let endpoint_id = crate::ipc::EndpointId(rdi as usize);
+            let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+            if current == 0 {
+                return u64::MAX;
+            }
+            let mut ipc_state = crate::ipc::IPC.lock();
+            match ipc_state
+                .registry
+                .claim_endpoint(endpoint_id, Some(current))
+            {
+                Ok(_) => 0,
+                Err(_) => u64::MAX,
+            }
+        }
+        104 => {
+            let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+            if current == 0 {
+                return u64::MAX;
+            }
+            let mut ipc_state = crate::ipc::IPC.lock();
+            match ipc_state.create_endpoint(Some(current)) {
+                Some(id) => id.0 as u64,
+                None => u64::MAX,
+            }
+        }
+        105 => {
+            let name_vaddr = x86_64::VirtAddr::new(rdi);
+            let name_len = rsi as usize;
+            if name_len > 64 {
+                return u64::MAX;
+            }
+            if crate::process::validate_user_range(name_vaddr, name_len).is_none() {
+                return u64::MAX;
+            }
+            let name_bytes = unsafe { core::slice::from_raw_parts(rdi as *const u8, name_len) };
+            if let Ok(name) = core::str::from_utf8(name_bytes) {
+                let initramfs = crate::memory::INITRAMFS.lock();
+                if let Some(ramdisk) = *initramfs {
+                    let archive = crate::tar::TarArchive::new(ramdisk);
+                    for entry in archive.iter() {
+                        if entry.name == name && entry.size > 0 {
+                            let mut allocator_guard = crate::memory::FRAME_ALLOCATOR.lock();
+                            if let Some(allocator) = allocator_guard.as_mut() {
+                                let pid = crate::process::spawn(entry.data, allocator);
+                                return pid as u64;
+                            }
+                        }
+                    }
+                }
+            }
+            u64::MAX
+        }
         _ => 0,
     }
 }

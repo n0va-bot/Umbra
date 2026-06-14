@@ -57,6 +57,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .expect("heap initialization failed");
     umbra::serial_println!("[kernel] heap initialized");
 
+    *umbra::memory::FRAME_ALLOCATOR.lock() = Some(frame_allocator);
+
     umbra::memory::store_phys_mem_offset(phys_mem_offset);
     umbra::serial_println!(
         "[kernel] phys_mem_offset stored at {:#X}",
@@ -101,17 +103,30 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     let archive = umbra::tar::TarArchive::new(ramdisk);
     for entry in archive.iter() {
-        umbra::serial_println!("[kernel] found in initramfs: {}, size: {}", entry.name, entry.size);
-        if entry.size > 0 {
-            process::spawn(entry.data, &mut frame_allocator);
+        umbra::serial_println!(
+            "[kernel] found in initramfs: {}, size: {}",
+            entry.name,
+            entry.size
+        );
+        if entry.size > 0 && entry.name == "SerV" {
+            let mut allocator_guard = umbra::memory::FRAME_ALLOCATOR.lock();
+            let allocator = allocator_guard.as_mut().unwrap();
+            process::spawn(entry.data, allocator);
             umbra::serial_println!("[kernel] {} spawned", entry.name);
+            break;
         }
     }
+
+    *umbra::memory::INITRAMFS.lock() = Some(ramdisk);
 
     let mut executor = Executor::new();
 
     loop {
-        process::teardown_exited(&mut frame_allocator);
+        {
+            let mut allocator_guard = umbra::memory::FRAME_ALLOCATOR.lock();
+            let allocator = allocator_guard.as_mut().unwrap();
+            process::teardown_exited(allocator);
+        }
 
         match process::schedule(kernel_index) {
             Some(next_idx) => {

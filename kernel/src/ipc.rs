@@ -148,6 +148,17 @@ impl EndpointRegistry {
         None
     }
 
+    pub fn claim_endpoint(&mut self, id: EndpointId, owner: Option<usize>) -> Result<(), ()> {
+        if id.0 >= MAX_ENDPOINTS {
+            return Err(());
+        }
+        if self.endpoints[id.0].is_some() {
+            return Err(());
+        }
+        self.endpoints[id.0] = Some(Endpoint::new(id, owner));
+        Ok(())
+    }
+
     pub fn get(&self, id: EndpointId) -> Option<&Endpoint> {
         self.endpoints.get(id.0).and_then(|e| e.as_ref())
     }
@@ -180,12 +191,12 @@ pub enum SendError {
     QueueFull(Message),
 }
 
-pub const FB_SERVER: EndpointId = EndpointId(1);
-pub const RTC_SERVER: EndpointId = EndpointId(2);
-pub const PCI_SERVER: EndpointId = EndpointId(3);
-pub const POWER_SERVER: EndpointId = EndpointId(4);
-pub const KEYBOARD_SERVER: EndpointId = EndpointId(5);
-pub const TICK_SERVER: EndpointId = EndpointId(6);
+pub const FB_SERVER: EndpointId = EndpointId(1001);
+pub const RTC_SERVER: EndpointId = EndpointId(1002);
+pub const PCI_SERVER: EndpointId = EndpointId(1003);
+pub const POWER_SERVER: EndpointId = EndpointId(1004);
+pub const RAW_KEYBOARD: EndpointId = EndpointId(1005);
+pub const RAW_TICK: EndpointId = EndpointId(1006);
 
 pub const FB_WRITE_CHAR: u32 = 1;
 pub const FB_BACKSPACE: u32 = 2;
@@ -225,18 +236,18 @@ impl IpcState {
 
     pub fn handle_kernel_call(&self, to: EndpointId, send_msg: &Message) -> Option<Message> {
         match to.0 {
-            5 => self.handle_keyboard_call(send_msg),
-            6 => self.handle_tick_call(send_msg),
+            1005 => self.handle_keyboard_call(send_msg),
+            1006 => self.handle_tick_call(send_msg),
             _ => None,
         }
     }
 
     pub fn handle_kernel_service(&self, to: EndpointId, msg: &Message) -> bool {
         match to.0 {
-            1 => self.handle_fb_message(msg),
-            2 => self.handle_rtc_message(msg),
-            3 => self.handle_pci_message(msg),
-            4 => self.handle_power_message(msg),
+            1001 => self.handle_fb_message(msg),
+            1002 => self.handle_rtc_message(msg),
+            1003 => self.handle_pci_message(msg),
+            1004 => self.handle_power_message(msg),
             _ => false,
         }
     }

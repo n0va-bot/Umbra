@@ -32,12 +32,12 @@ impl Message {
         }
     }
 }
-const FB_SERVER: usize = 1;
-const RTC_SERVER: usize = 2;
-const PCI_SERVER: usize = 3;
-const POWER_SERVER: usize = 4;
-const KEYBOARD_SERVER: usize = 5;
-const TICK_SERVER: usize = 6;
+
+const FB_SERVER: usize = 1001;
+const RTC_SERVER: usize = 1002;
+const PCI_SERVER: usize = 1003;
+const POWER_SERVER: usize = 1004;
+
 const FB_WRITE_CHAR: u32 = 1;
 const FB_BACKSPACE: u32 = 2;
 const FB_CLEAR_SCREEN: u32 = 3;
@@ -45,43 +45,12 @@ const FB_WRITE_STRING: u32 = 4;
 const RTC_GET_TIME: u32 = 1;
 const PCI_SCAN_BUSES: u32 = 1;
 const POWER_OFF: u32 = 1;
-const KB_GET_SCANCODE: u32 = 1;
-const TICK_GET: u32 = 1;
+
 const SYS_IPC_SEND: u64 = 100;
 const SYS_IPC_RECV: u64 = 101;
 const SYS_IPC_CALL: u64 = 102;
+const SYS_IPC_CREATE_ENDPOINT: u64 = 104;
 
-unsafe fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
-    let result = syscall(
-        SYS_IPC_SEND,
-        endpoint as u64,
-        msg as *const Message as u64,
-        0,
-        0,
-        0,
-    );
-    match result {
-        0 => Ok(()),
-        _ => Err(()),
-    }
-}
-
-unsafe fn ipc_call(endpoint: usize, send_msg: &Message, recv_msg: &mut Message) -> Result<(), ()> {
-    let result = syscall(
-        SYS_IPC_CALL,
-        endpoint as u64,
-        send_msg as *const Message as u64,
-        recv_msg as *mut Message as u64,
-        0,
-        0,
-    );
-    match result {
-        0 => Ok(()),
-        _ => Err(()),
-    }
-}
-
-#[inline(always)]
 unsafe fn syscall(n: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> u64 {
     let ret: u64;
     asm!(
@@ -100,57 +69,79 @@ unsafe fn syscall(n: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64)
     ret
 }
 
+fn create_endpoint() -> Option<usize> {
+    let result = unsafe { syscall(SYS_IPC_CREATE_ENDPOINT, 0, 0, 0, 0, 0) };
+    if result == u64::MAX {
+        None
+    } else {
+        Some(result as usize)
+    }
+}
+
+fn ipc_recv(endpoint: usize, msg: &mut Message) -> Result<(), ()> {
+    let result = unsafe {
+        syscall(
+            SYS_IPC_RECV,
+            endpoint as u64,
+            msg as *mut Message as u64,
+            0,
+            0,
+            0,
+        )
+    };
+    if result == 0 { Ok(()) } else { Err(()) }
+}
+
+fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
+    let result = unsafe {
+        syscall(
+            SYS_IPC_SEND,
+            endpoint as u64,
+            msg as *const Message as u64,
+            0,
+            0,
+            0,
+        )
+    };
+    if result == 0 { Ok(()) } else { Err(()) }
+}
+
+fn lookup_service(name: &str, reply_endpoint: usize) -> Option<usize> {
+    let mut req = Message::empty();
+    req.tag = 2; // LOOKUP_SERVICE
+    let bytes = name.as_bytes();
+    let copy_len = bytes.len().min(8);
+    req.data[0..copy_len].copy_from_slice(&bytes[..copy_len]);
+    req.data[8..16].copy_from_slice(&(reply_endpoint as u64).to_le_bytes());
+
+    let _ = ipc_send(1, &req); // SerV is at 1
+
+    let mut resp = Message::empty();
+    if ipc_recv(reply_endpoint, &mut resp).is_ok() {
+        if resp.tag == 2 {
+            let ep = usize::from_le_bytes(resp.data[0..8].try_into().unwrap());
+            if ep != usize::MAX {
+                return Some(ep);
+            }
+        }
+    }
+    None
+}
+
 fn fb_send_char(byte: u8) {
     let msg = Message::new(FB_WRITE_CHAR, &[byte]);
-    unsafe {
-        let _ = ipc_send(FB_SERVER, &msg);
-    }
+    let _ = ipc_send(FB_SERVER, &msg);
 }
-
 fn fb_backspace() {
     let msg = Message::new(FB_BACKSPACE, &[]);
-    unsafe {
-        let _ = ipc_send(FB_SERVER, &msg);
-    }
+    let _ = ipc_send(FB_SERVER, &msg);
 }
-
 fn fb_clear_screen() {
     let msg = Message::new(FB_CLEAR_SCREEN, &[]);
-    unsafe {
-        let _ = ipc_send(FB_SERVER, &msg);
-    }
-}
-
-fn fb_write_str(s: &str) {
-    let msg = Message::new(FB_WRITE_STRING, s.as_bytes());
-    unsafe {
-        let _ = ipc_send(FB_SERVER, &msg);
-    }
-}
-
-fn rtc_get_time() {
-    let msg = Message::new(RTC_GET_TIME, &[]);
-    unsafe {
-        let _ = ipc_send(RTC_SERVER, &msg);
-    }
-}
-
-fn pci_scan_buses() {
-    let msg = Message::new(PCI_SCAN_BUSES, &[]);
-    unsafe {
-        let _ = ipc_send(PCI_SERVER, &msg);
-    }
-}
-
-fn power_off() {
-    let msg = Message::new(POWER_OFF, &[]);
-    unsafe {
-        let _ = ipc_send(POWER_SERVER, &msg);
-    }
+    let _ = ipc_send(FB_SERVER, &msg);
 }
 
 struct Stdout;
-
 impl core::fmt::Write for Stdout {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for byte in s.bytes() {
@@ -165,7 +156,6 @@ macro_rules! print {
         let _ = core::fmt::Write::write_fmt(&mut Stdout, format_args!($($arg)*));
     };
 }
-
 macro_rules! println {
     () => (print!("\n"));
     ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
@@ -175,28 +165,41 @@ unsafe fn sys_yield() -> u64 {
     syscall(7, 0, 0, 0, 0, 0)
 }
 
-fn sys_read_ticks() -> u64 {
-    let mut request = Message::new(TICK_GET, &[]);
-    let mut response = Message::empty();
-    unsafe {
-        if ipc_call(TICK_SERVER, &request, &mut response).is_ok() {
+fn sys_read_ticks(tick_server: usize, my_ep: usize) -> u64 {
+    let mut req = Message::new(1, &[]); // TICK_GET
+    req.data[0..8].copy_from_slice(&(my_ep as u64).to_le_bytes());
+    let _ = ipc_send(tick_server, &req);
+
+    let mut resp = Message::empty();
+    if ipc_recv(my_ep, &mut resp).is_ok() {
+        if resp.tag == 1 {
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&response.data[..8]);
+            bytes.copy_from_slice(&resp.data[..8]);
             return u64::from_le_bytes(bytes);
         }
     }
     0
 }
 
-fn sys_read_scancode() -> Option<u8> {
-    let mut request = Message::new(KB_GET_SCANCODE, &[]);
-    let mut response = Message::empty();
-    unsafe {
-        if ipc_call(KEYBOARD_SERVER, &request, &mut response).is_ok() {
-            if response.data[0] == u64::MAX as u8 {
+fn sys_read_char(kb_server: usize, my_ep: usize) -> Option<char> {
+    // Use KB_GET_CHAR_POLL to avoid blocking
+    let mut req = Message::new(3, &[]); // KB_GET_CHAR_POLL
+    req.data[0..8].copy_from_slice(&(my_ep as u64).to_le_bytes());
+    let _ = ipc_send(kb_server, &req);
+
+    let mut resp = Message::empty();
+    if ipc_recv(my_ep, &mut resp).is_ok() {
+        if resp.tag == 3 {
+            let ch_u32 = u32::from_le_bytes(resp.data[0..4].try_into().unwrap());
+            if ch_u32 == u32::MAX {
                 return None;
             }
-            return Some(response.data[0]);
+            if ch_u32 == 8 {
+                return Some('\x08'); // Backspace
+            }
+            if let Some(c) = core::char::from_u32(ch_u32) {
+                return Some(c);
+            }
         }
     }
     None
@@ -208,89 +211,77 @@ unsafe fn sys_exit() -> ! {
 }
 
 fn sys_poweroff() {
-    power_off();
+    let msg = Message::new(POWER_OFF, &[]);
+    let _ = ipc_send(POWER_SERVER, &msg);
 }
 
 fn sys_date() {
-    rtc_get_time();
+    let msg = Message::new(RTC_GET_TIME, &[]);
+    let _ = ipc_send(RTC_SERVER, &msg);
 }
 
 fn sys_lspci() {
-    pci_scan_buses();
+    let msg = Message::new(PCI_SCAN_BUSES, &[]);
+    let _ = ipc_send(PCI_SERVER, &msg);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    print!("> ");
+    let my_ep = create_endpoint().expect("userspace: failed to create endpoint");
 
-    let mut keyboard = pc_keyboard::Keyboard::new(
-        pc_keyboard::ScancodeSet1::new(),
-        pc_keyboard::layouts::Us104Key,
-        pc_keyboard::HandleControl::Ignore,
-    );
+    let kb_server = lookup_service("keyboard", my_ep).expect("userspace: kb-server not found");
+    let tick_server =
+        lookup_service("tick\0\0\0\0", my_ep).expect("userspace: tick-server not found");
+
+    print!("> ");
 
     let mut buffer = [0u8; 128];
     let mut len = 0;
 
     let mut cursor_visible = false;
-    let mut last_blink = sys_read_ticks();
+    let mut last_blink = sys_read_ticks(tick_server, my_ep);
 
     loop {
-        if let Some(scancode) = sys_read_scancode() {
+        if let Some(c) = sys_read_char(kb_server, my_ep) {
             if cursor_visible {
                 fb_backspace();
                 cursor_visible = false;
             }
 
-            if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-                if let Some(key) = keyboard.process_keyevent(key_event) {
-                    match key {
-                        pc_keyboard::DecodedKey::Unicode(character) => match character {
-                            '\n' => {
-                                println!();
-                                if let Ok(s) = core::str::from_utf8(&buffer[..len]) {
-                                    process_command(s);
-                                }
-                                unsafe { sys_yield() };
-                                len = 0;
-                                print!("> ");
-                            }
-                            '\u{8}' | '\x7f' => {
-                                if len > 0 {
-                                    len -= 1;
-                                    fb_backspace();
-                                }
-                            }
-                            c if c.is_ascii_graphic() || c == ' ' => {
-                                if len < buffer.len() {
-                                    let mut buf = [0; 4];
-                                    let s = c.encode_utf8(&mut buf);
-                                    if len + s.len() <= buffer.len() {
-                                        for b in s.bytes() {
-                                            buffer[len] = b;
-                                            len += 1;
-                                        }
-                                        print!("{}", c);
-                                    }
-                                }
-                            }
-                            _ => {}
-                        },
-                        pc_keyboard::DecodedKey::RawKey(key) => match key {
-                            pc_keyboard::KeyCode::Backspace => {
-                                if len > 0 {
-                                    len -= 1;
-                                    fb_backspace();
-                                }
-                            }
-                            _ => {}
-                        },
+            match c {
+                '\n' => {
+                    println!();
+                    if let Ok(s) = core::str::from_utf8(&buffer[..len]) {
+                        process_command(s);
+                    }
+                    unsafe { sys_yield() };
+                    len = 0;
+                    print!("> ");
+                }
+                '\x08' | '\x7f' => {
+                    if len > 0 {
+                        len -= 1;
+                        fb_backspace();
                     }
                 }
+                c if c.is_ascii_graphic() || c == ' ' => {
+                    if len < buffer.len() {
+                        let mut buf = [0; 4];
+                        let s = c.encode_utf8(&mut buf);
+                        if len + s.len() <= buffer.len() {
+                            for b in s.bytes() {
+                                buffer[len] = b;
+                                len += 1;
+                            }
+                            print!("{}", c);
+                        }
+                    }
+                }
+                _ => {}
             }
-            last_blink = sys_read_ticks();
+            last_blink = sys_read_ticks(tick_server, my_ep);
         } else {
-            let now = sys_read_ticks();
+            let now = sys_read_ticks(tick_server, my_ep);
             if now.wrapping_sub(last_blink) >= 9 {
                 if cursor_visible {
                     fb_backspace();
