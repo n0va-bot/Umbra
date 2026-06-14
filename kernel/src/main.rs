@@ -60,6 +60,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     *umbra::memory::FRAME_ALLOCATOR.lock() = Some(frame_allocator);
 
     umbra::memory::store_phys_mem_offset(phys_mem_offset);
+    umbra::memory::store_boot_pml4();
     umbra::serial_println!(
         "[kernel] phys_mem_offset stored at {:#X}",
         phys_mem_offset.as_u64()

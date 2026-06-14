@@ -11,6 +11,16 @@ static mut PHYS_MEM_OFFSET: u64 = 0;
 pub static FRAME_ALLOCATOR: spin::Mutex<Option<BootInfoFrameAllocator>> = spin::Mutex::new(None);
 pub static INITRAMFS: spin::Mutex<Option<&'static [u8]>> = spin::Mutex::new(None);
 
+/// The boot PML4 physical address, saved at startup so that
+/// `clone_kernel_pml4` always clones from a clean kernel-only page table
+/// instead of from whatever process happens to be running.
+static mut BOOT_PML4: u64 = 0;
+
+pub fn store_boot_pml4() {
+    let (frame, _) = Cr3::read();
+    unsafe { BOOT_PML4 = frame.start_address().as_u64() };
+}
+
 pub fn store_phys_mem_offset(offset: VirtAddr) {
     unsafe { PHYS_MEM_OFFSET = offset.as_u64() };
 }
@@ -77,24 +87,23 @@ pub unsafe fn create_mapper_for_pml4(pml4_phys: PhysAddr) -> OffsetPageTable<'st
 
 pub unsafe fn clone_kernel_pml4(frame_allocator: &mut impl FrameAllocator<Size4KiB>) -> PhysAddr {
     let offset = get_phys_mem_offset();
-    let (current_pml4_frame, _) = Cr3::read();
-    let current_pml4_ptr =
-        (offset + current_pml4_frame.start_address().as_u64()).as_ptr() as *const u64;
+    // Always clone from the boot PML4, which has all kernel/bootloader
+    // mappings but no user-space mappings from any process.
+    let boot_pml4_phys = unsafe { BOOT_PML4 };
+    let boot_pml4_ptr =
+        (offset + boot_pml4_phys).as_ptr() as *const u64;
 
     let new_pml4_frame = frame_allocator
         .allocate_frame()
         .expect("out of frames for PML4");
     let new_pml4_ptr = (offset + new_pml4_frame.start_address().as_u64()).as_mut_ptr() as *mut u64;
 
+    // Copy all 512 entries from the boot PML4.  The boot PML4 never has
+    // user-space mappings, so this is safe and preserves any lower-half
+    // mappings the bootloader created (ramdisk, identity maps, etc.).
     for i in 0..512 {
-        unsafe { *new_pml4_ptr.add(i) = 0 };
-    }
-
-    for i in 0..512 {
-        let entry_bits = unsafe { *current_pml4_ptr.add(i) };
-        if entry_bits != 0 {
-            unsafe { *new_pml4_ptr.add(i) = entry_bits };
-        }
+        let entry_bits = unsafe { *boot_pml4_ptr.add(i) };
+        unsafe { *new_pml4_ptr.add(i) = entry_bits };
     }
 
     new_pml4_frame.start_address()
