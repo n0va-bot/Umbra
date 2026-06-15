@@ -87,6 +87,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         user_rsp: 0,
         saved: SavedRegs::default(),
         interrupt_frame: process::InterruptFrame::default(),
+        blocked_on_endpoint: None,
     };
 
     let kernel_index = {

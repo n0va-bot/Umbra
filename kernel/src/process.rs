@@ -77,6 +77,7 @@ pub struct Process {
     pub user_rsp: u64,
     pub saved: SavedRegs,
     pub interrupt_frame: InterruptFrame,
+    pub blocked_on_endpoint: Option<usize>,
 }
 
 pub const KERNEL_STACK_SIZE: usize = 4096 * KERNEL_STACK_PAGES;
@@ -193,6 +194,18 @@ pub fn schedule(after_idx: usize) -> Option<usize> {
     None
 }
 
+pub fn wake_blocked_on_endpoint(endpoint_id: usize) {
+    let mut table = PROCESSES.lock();
+    for idx in 0..MAX_PROCESSES {
+        if let Some(proc) = table.get_mut(idx) {
+            if proc.state == State::Blocked && proc.blocked_on_endpoint == Some(endpoint_id) {
+                proc.state = State::Ready;
+                proc.blocked_on_endpoint = None;
+            }
+        }
+    }
+}
+
 #[unsafe(naked)]
 pub extern "C" fn return_to_user() {
     naked_asm!("iretq")
@@ -239,7 +252,7 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
         new_cr3 = new_proc.cr3;
         new_kernel_stack_top = new_proc.kernel_stack_top;
         new_rsp = new_proc.kernel_rsp.as_u64();
-        
+
         // We have to bypass borrow checker here because we need a raw pointer
         // while the table lock is still held. The pointer is safe because
         // the process table lives forever and the slot won't move.
@@ -350,6 +363,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
         user_rsp: USER_STACK_TOP,
         saved: SavedRegs::default(),
         interrupt_frame: InterruptFrame::default(),
+        blocked_on_endpoint: None,
     };
 
     let index = PROCESSES.lock().insert(process);

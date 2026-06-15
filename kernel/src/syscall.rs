@@ -127,7 +127,11 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                 return 0;
             }
             match ipc_state.send(endpoint_id, *msg) {
-                Ok(_) => 0,
+                Ok(_) => {
+                    drop(ipc_state);
+                    crate::process::wake_blocked_on_endpoint(endpoint_id.0);
+                    0
+                }
                 Err(crate::ipc::SendError::InvalidEndpoint) => u64::MAX,
                 Err(crate::ipc::SendError::QueueFull(_)) => u64::MAX - 1,
             }
@@ -156,17 +160,27 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                     0
                 }
                 None => {
+                    drop(ipc_state);
                     let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
                     if current != 0 {
                         {
                             let mut table = crate::process::PROCESSES.lock();
                             if let Some(p) = table.get_mut(current) {
                                 p.state = crate::process::State::Blocked;
+                                p.blocked_on_endpoint = Some(endpoint_id.0);
                             }
                         }
                         unsafe { crate::process::switch_to(current, 0) };
                     }
-                    u64::MAX
+                    // After waking up, retry the recv
+                    let mut ipc_state = crate::ipc::IPC.lock();
+                    match ipc_state.recv(endpoint_id) {
+                        Some(msg) => {
+                            unsafe { *msg_ptr = msg };
+                            0
+                        }
+                        None => u64::MAX,
+                    }
                 }
             }
         }
@@ -208,7 +222,10 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
             {
                 let mut ipc_state = crate::ipc::IPC.lock();
                 match ipc_state.send(endpoint_id, *send_msg) {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        drop(ipc_state);
+                        crate::process::wake_blocked_on_endpoint(endpoint_id.0);
+                    }
                     Err(_) => return u64::MAX,
                 }
             }
@@ -219,17 +236,27 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
                     0
                 }
                 None => {
+                    drop(ipc_state);
                     let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
                     if current != 0 {
                         {
                             let mut table = crate::process::PROCESSES.lock();
                             if let Some(p) = table.get_mut(current) {
                                 p.state = crate::process::State::Blocked;
+                                p.blocked_on_endpoint = Some(endpoint_id.0);
                             }
                         }
                         unsafe { crate::process::switch_to(current, 0) };
                     }
-                    u64::MAX
+                    // After waking up, retry the recv
+                    let mut ipc_state = crate::ipc::IPC.lock();
+                    match ipc_state.recv(endpoint_id) {
+                        Some(msg) => {
+                            unsafe { *recv_msg_ptr = msg };
+                            0
+                        }
+                        None => u64::MAX,
+                    }
                 }
             }
         }
