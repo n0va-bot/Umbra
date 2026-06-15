@@ -174,7 +174,7 @@ pub extern "C" fn _start() -> ! {
                             break;
                         }
                     }
-                    if !char_sent && msg.tag == KB_GET_CHAR_POLL {
+                    if char_sent {
                         break;
                     }
                     unsafe { syscall(7, 0, 0, 0, 0, 0) }; // yield
