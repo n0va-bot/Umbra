@@ -74,6 +74,7 @@ pub struct Process {
     pub kernel_stack_top: VirtAddr,
     pub kernel_stack_slot: usize,
     pub kernel_rsp: VirtAddr,
+    pub user_rsp: u64,
     pub saved: SavedRegs,
     pub interrupt_frame: InterruptFrame,
 }
@@ -228,12 +229,21 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
     let old_rsp_slot: *mut u64;
 
     {
-        let table = PROCESSES.lock();
-        let old_proc = table.get(old_idx).expect("switch_to: invalid old_idx");
+        let mut table = PROCESSES.lock();
+        if let Some(old_proc) = table.get_mut(old_idx) {
+            old_proc.user_rsp = crate::syscall::USER_RSP_COPY;
+        }
         let new_proc = table.get(new_idx).expect("switch_to: invalid new_idx");
+        crate::syscall::USER_RSP_COPY = new_proc.user_rsp;
+
         new_cr3 = new_proc.cr3;
         new_kernel_stack_top = new_proc.kernel_stack_top;
         new_rsp = new_proc.kernel_rsp.as_u64();
+        
+        // We have to bypass borrow checker here because we need a raw pointer
+        // while the table lock is still held. The pointer is safe because
+        // the process table lives forever and the slot won't move.
+        let old_proc = table.get(old_idx).unwrap();
         old_rsp_slot = core::ptr::addr_of!(old_proc.kernel_rsp) as *mut u64;
     }
 
@@ -337,6 +347,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
         kernel_stack_top,
         kernel_stack_slot,
         kernel_rsp,
+        user_rsp: USER_STACK_TOP,
         saved: SavedRegs::default(),
         interrupt_frame: InterruptFrame::default(),
     };

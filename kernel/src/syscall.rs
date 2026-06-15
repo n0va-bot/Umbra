@@ -18,7 +18,7 @@ pub fn init() {
     }
 }
 
-static mut USER_RSP_COPY: u64 = 0;
+pub static mut USER_RSP_COPY: u64 = 0;
 
 #[unsafe(naked)]
 extern "C" fn syscall_entry() {
@@ -38,6 +38,7 @@ extern "C" fn syscall_entry() {
         "push r9",
 
         "mov rcx, r10",
+        "mov r9, rax",
         "call {dispatch}",
 
         "pop r9",
@@ -59,9 +60,7 @@ extern "C" fn syscall_entry() {
     );
 }
 
-extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64, _r9: u64) -> u64 {
-    let syscall_nr: u64;
-    unsafe { core::arch::asm!("mov {}, rax", out(reg) syscall_nr) };
+extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64, syscall_nr: u64) -> u64 {
 
     if crate::interrupts::RESCHEDULE_NEEDED
         .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)

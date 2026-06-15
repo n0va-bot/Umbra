@@ -98,12 +98,43 @@ pub unsafe fn clone_kernel_pml4(frame_allocator: &mut impl FrameAllocator<Size4K
         .expect("out of frames for PML4");
     let new_pml4_ptr = (offset + new_pml4_frame.start_address().as_u64()).as_mut_ptr() as *mut u64;
 
-    // Copy all 512 entries from the boot PML4.  The boot PML4 never has
-    // user-space mappings, so this is safe and preserves any lower-half
-    // mappings the bootloader created (ramdisk, identity maps, etc.).
+    // Copy all 512 entries from the boot PML4.
     for i in 0..512 {
         let entry_bits = unsafe { *boot_pml4_ptr.add(i) };
         unsafe { *new_pml4_ptr.add(i) = entry_bits };
+    }
+
+    // Deep-clone lower-half PDPTs (entries 0-255) so that each process
+    // has independent page table structures in the user-space half.
+    // Without this, map_to() for different processes modifies the same
+    // shared PDPT frames, corrupting each other's mappings at 0x40000000.
+    // We preserve the bootloader's mappings by copying PDPT contents.
+    for i in 0..256 {
+        let entry = unsafe { *new_pml4_ptr.add(i) };
+        if entry & 1 == 0 {
+            // Not present — skip
+            continue;
+        }
+
+        let old_pdpt_phys = entry & 0x000F_FFFF_FFFF_F000;
+        let flags_bits = entry & !0x000F_FFFF_FFFF_F000;
+
+        let new_pdpt_frame = frame_allocator
+            .allocate_frame()
+            .expect("out of frames for PDPT deep-clone");
+        let old_pdpt_ptr = (offset + old_pdpt_phys).as_ptr() as *const u8;
+        let new_pdpt_ptr =
+            (offset + new_pdpt_frame.start_address().as_u64()).as_mut_ptr() as *mut u8;
+
+        // Copy all 4096 bytes (512 entries × 8 bytes)
+        unsafe {
+            core::ptr::copy_nonoverlapping(old_pdpt_ptr, new_pdpt_ptr, 4096);
+        }
+
+        // Point this PML4 entry to the cloned PDPT
+        unsafe {
+            *new_pml4_ptr.add(i) = new_pdpt_frame.start_address().as_u64() | flags_bits;
+        }
     }
 
     new_pml4_frame.start_address()

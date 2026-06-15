@@ -84,6 +84,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         kernel_stack_top,
         kernel_stack_slot,
         kernel_rsp: VirtAddr::new(0),
+        user_rsp: 0,
         saved: SavedRegs::default(),
         interrupt_frame: process::InterruptFrame::default(),
     };

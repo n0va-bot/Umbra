@@ -68,6 +68,7 @@ pub fn load_elf_into(
 ) -> u64 {
     let phys_mem_offset = crate::memory::get_phys_mem_offset();
 
+    crate::serial_println!("[load_elf_into] First 4 bytes: {:x?} (should be 7f 45 4c 46)", &elf_bytes[0..4]);
     let elf = ElfFile::new(elf_bytes).expect("failed to parse ELF");
 
     for header in elf.program_iter() {
@@ -79,6 +80,8 @@ pub fn load_elf_into(
         let mem_size = header.mem_size();
         let file_offset = header.offset() as usize;
         let file_size = header.file_size() as usize;
+
+        crate::serial_println!("[load_elf_into] virt_start: {:#x}, file_offset: {:#x}, file_size: {:#x}, mem_size: {:#x}", virt_start, file_offset, file_size, mem_size);
 
         let flags =
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
