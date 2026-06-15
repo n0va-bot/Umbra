@@ -579,3 +579,43 @@ pub fn validate_user_range(vaddr: VirtAddr, len: usize) -> Option<()> {
     validate_user_ptr(end)?;
     Some(())
 }
+
+pub fn map_physical_region(vaddr: VirtAddr, paddr: PhysAddr, size: usize) -> Result<(), ()> {
+    let current = CURRENT_PROCESS.load(Ordering::SeqCst);
+    if current == 0 {
+        return Err(());
+    }
+
+    let cr3 = {
+        let table = PROCESSES.lock();
+        table.get(current).map(|p| p.cr3).ok_or(())?
+    };
+
+    let mut mapper = unsafe { crate::memory::create_mapper_for_pml4(cr3) };
+
+    let flags = PageTableFlags::PRESENT
+        | PageTableFlags::WRITABLE
+        | PageTableFlags::USER_ACCESSIBLE
+        | PageTableFlags::NO_EXECUTE;
+
+    let start_page = Page::<Size4KiB>::containing_address(vaddr);
+    let end_page = Page::<Size4KiB>::containing_address(vaddr + size - 1u64);
+
+    let mut frame = PhysFrame::<Size4KiB>::containing_address(paddr);
+
+    let mut allocator_guard = crate::memory::FRAME_ALLOCATOR.lock();
+    let allocator = allocator_guard.as_mut().ok_or(())?;
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        unsafe {
+            if let Ok(mapping) = mapper.map_to(page, frame, flags, allocator) {
+                mapping.flush();
+            } else {
+                return Err(());
+            }
+        }
+        frame += 1;
+    }
+
+    Ok(())
+}

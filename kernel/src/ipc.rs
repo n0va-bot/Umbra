@@ -245,9 +245,6 @@ impl IpcState {
     pub fn handle_kernel_service(&self, to: EndpointId, msg: &Message) -> bool {
         match to.0 {
             1001 => self.handle_fb_message(msg),
-            1002 => self.handle_rtc_message(msg),
-            1003 => self.handle_pci_message(msg),
-            1004 => self.handle_power_message(msg),
             _ => false,
         }
     }
@@ -286,46 +283,6 @@ impl IpcState {
                         crate::print!("{}", byte as char);
                     }
                 }
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn handle_rtc_message(&self, msg: &Message) -> bool {
-        match msg.tag {
-            RTC_GET_TIME => {
-                let mut cmos = crate::cmos::Cmos::new();
-                let (year, month, day, hours, minutes, seconds) = cmos.read_time();
-                crate::println!(
-                    "{:02}:{:02}:{:02} {:04}-{:02}-{:02}",
-                    hours,
-                    minutes,
-                    seconds,
-                    2000 + (year as u16),
-                    month,
-                    day
-                );
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn handle_pci_message(&self, msg: &Message) -> bool {
-        match msg.tag {
-            PCI_SCAN_BUSES => {
-                crate::pci::scan_buses();
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn handle_power_message(&self, msg: &Message) -> bool {
-        match msg.tag {
-            POWER_OFF => {
-                crate::acpi::power_off();
                 true
             }
             _ => false,

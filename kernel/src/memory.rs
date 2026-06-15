@@ -90,8 +90,7 @@ pub unsafe fn clone_kernel_pml4(frame_allocator: &mut impl FrameAllocator<Size4K
     // Always clone from the boot PML4, which has all kernel/bootloader
     // mappings but no user-space mappings from any process.
     let boot_pml4_phys = unsafe { BOOT_PML4 };
-    let boot_pml4_ptr =
-        (offset + boot_pml4_phys).as_ptr() as *const u64;
+    let boot_pml4_ptr = (offset + boot_pml4_phys).as_ptr() as *const u64;
 
     let new_pml4_frame = frame_allocator
         .allocate_frame()

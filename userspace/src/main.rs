@@ -215,14 +215,83 @@ fn sys_poweroff() {
     let _ = ipc_send(POWER_SERVER, &msg);
 }
 
-fn sys_date() {
-    let msg = Message::new(RTC_GET_TIME, &[]);
-    let _ = ipc_send(RTC_SERVER, &msg);
+fn sys_date(my_ep: usize) {
+    let mut req = Message::new(RTC_GET_TIME, &[]);
+    req.data[0..8].copy_from_slice(&(my_ep as u64).to_le_bytes());
+    let _ = ipc_send(RTC_SERVER, &req);
+
+    let mut resp = Message::empty();
+    if ipc_recv(my_ep, &mut resp).is_ok() && resp.tag == 1 {
+        let year = resp.data[0];
+        let month = resp.data[1];
+        let day = resp.data[2];
+        let hours = resp.data[3];
+        let minutes = resp.data[4];
+        let seconds = resp.data[5];
+
+        println!(
+            "{:02}:{:02}:{:02} {:04}-{:02}-{:02}",
+            hours,
+            minutes,
+            seconds,
+            2000 + (year as u16),
+            month,
+            day
+        );
+    }
 }
 
-fn sys_lspci() {
-    let msg = Message::new(PCI_SCAN_BUSES, &[]);
-    let _ = ipc_send(PCI_SERVER, &msg);
+fn write_hex(mut val: u32, digits: u8) {
+    let mut buf = [b'0'; 8];
+    for i in 0..digits {
+        let hex = (val & 0xF) as u8;
+        buf[(digits - 1 - i) as usize] = if hex < 10 {
+            b'0' + hex
+        } else {
+            b'A' + hex - 10
+        };
+        val >>= 4;
+    }
+    print!("{}", core::str::from_utf8(&buf[..digits as usize]).unwrap());
+}
+
+fn sys_lspci(my_ep: usize) {
+    let mut req = Message::new(PCI_SCAN_BUSES, &[]);
+    req.data[0..8].copy_from_slice(&(my_ep as u64).to_le_bytes());
+    let _ = ipc_send(PCI_SERVER, &req);
+
+    loop {
+        let mut resp = Message::empty();
+        if ipc_recv(my_ep, &mut resp).is_ok() {
+            if resp.tag == 1 {
+                let bus = resp.data[0];
+                let device = resp.data[1];
+                let func = resp.data[2];
+                let class_code = resp.data[3];
+                let subclass = resp.data[4];
+                let vendor_id = u16::from_le_bytes(resp.data[5..7].try_into().unwrap());
+                let device_id = u16::from_le_bytes(resp.data[7..9].try_into().unwrap());
+
+                print!("Bus ");
+                write_hex(bus as u32, 2);
+                print!(" | Dev ");
+                write_hex(device as u32, 2);
+                print!(" | Func ");
+                write_hex(func as u32, 2);
+                print!(" => Vendor: ");
+                write_hex(vendor_id as u32, 4);
+                print!(", Device: ");
+                write_hex(device_id as u32, 4);
+                print!(" | Class: ");
+                write_hex(class_code as u32, 2);
+                print!(", Sub: ");
+                write_hex(subclass as u32, 2);
+                println!();
+            } else if resp.tag == 2 {
+                break;
+            }
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -252,7 +321,7 @@ pub extern "C" fn _start() -> ! {
                 '\n' => {
                     println!();
                     if let Ok(s) = core::str::from_utf8(&buffer[..len]) {
-                        process_command(s);
+                        process_command(s, my_ep);
                     }
                     unsafe { sys_yield() };
                     len = 0;
@@ -296,7 +365,7 @@ pub extern "C" fn _start() -> ! {
     }
 }
 
-fn process_command(cmd: &str) {
+fn process_command(cmd: &str, my_ep: usize) {
     let cmd = cmd.trim();
     if cmd.is_empty() {
         return;
@@ -327,10 +396,10 @@ fn process_command(cmd: &str) {
             sys_poweroff();
         }
         "date" => {
-            sys_date();
+            sys_date(my_ep);
         }
         "lspci" => {
-            sys_lspci();
+            sys_lspci(my_ep);
         }
         "exit" => {
             unsafe { sys_exit() };

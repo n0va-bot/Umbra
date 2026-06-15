@@ -198,6 +198,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "fb-server"
+version = "0.1.0"
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -427,6 +431,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed089a1fbffe3337a1a345501c981f1eb1e47e69de5a40e852433e12953c3174"
 
 [[package]]
+name = "pci-server"
+version = "0.1.0"
+
+[[package]]
 name = "pic8259"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -440,6 +448,10 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "power-server"
+version = "0.1.0"
 
 [[package]]
 name = "prettyplease"
@@ -489,6 +501,10 @@ checksum = "1ed5f33bb98eace335c13cdd159fbfc73ce203b597981a76832dfbb9cbd8101b"
 dependencies = [
  "log",
 ]
+
+[[package]]
+name = "rtc-server"
+version = "0.1.0"
 
 [[package]]
 name = "rustix"

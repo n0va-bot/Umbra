@@ -60,8 +60,14 @@ extern "C" fn syscall_entry() {
     );
 }
 
-extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64, syscall_nr: u64) -> u64 {
-
+extern "C" fn syscall_dispatch(
+    rdi: u64,
+    rsi: u64,
+    rdx: u64,
+    _rcx: u64,
+    _r8: u64,
+    syscall_nr: u64,
+) -> u64 {
     if crate::interrupts::RESCHEDULE_NEEDED
         .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
         .is_ok()
@@ -98,6 +104,64 @@ extern "C" fn syscall_dispatch(rdi: u64, rsi: u64, rdx: u64, _rcx: u64, _r8: u64
             if current != 0 {
                 crate::process::exit(current);
                 unsafe { crate::process::switch_to(current, 0) };
+            }
+            0
+        }
+
+        10 => {
+            let phys_addr = x86_64::PhysAddr::new(rdi);
+            let virt_addr = x86_64::VirtAddr::new(rsi);
+            let size = rdx as usize;
+            match crate::process::map_physical_region(virt_addr, phys_addr, size) {
+                Ok(_) => 0,
+                Err(_) => u64::MAX,
+            }
+        }
+        11 => {
+            let port = rdi as u16;
+            unsafe {
+                let mut pm = x86_64::instructions::port::Port::<u8>::new(port);
+                pm.read() as u64
+            }
+        }
+        12 => {
+            let port = rdi as u16;
+            let val = rsi as u8;
+            unsafe {
+                let mut pm = x86_64::instructions::port::Port::<u8>::new(port);
+                pm.write(val);
+            }
+            0
+        }
+        13 => {
+            let port = rdi as u16;
+            unsafe {
+                let mut pm = x86_64::instructions::port::Port::<u16>::new(port);
+                pm.read() as u64
+            }
+        }
+        14 => {
+            let port = rdi as u16;
+            let val = rsi as u16;
+            unsafe {
+                let mut pm = x86_64::instructions::port::Port::<u16>::new(port);
+                pm.write(val);
+            }
+            0
+        }
+        15 => {
+            let port = rdi as u16;
+            unsafe {
+                let mut pm = x86_64::instructions::port::Port::<u32>::new(port);
+                pm.read() as u64
+            }
+        }
+        16 => {
+            let port = rdi as u16;
+            let val = rsi as u32;
+            unsafe {
+                let mut pm = x86_64::instructions::port::Port::<u32>::new(port);
+                pm.write(val);
             }
             0
         }

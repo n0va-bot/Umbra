@@ -83,9 +83,16 @@ extern "x86-interrupt" fn page_fault_handler(
     if stack_frame.instruction_pointer.as_u64() >= 0x400000 {
         unsafe {
             let ptr = stack_frame.instruction_pointer.as_ptr::<u8>();
-            println!("Instruction bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                *ptr.offset(0), *ptr.offset(1), *ptr.offset(2), *ptr.offset(3),
-                *ptr.offset(4), *ptr.offset(5), *ptr.offset(6), *ptr.offset(7)
+            println!(
+                "Instruction bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                *ptr.offset(0),
+                *ptr.offset(1),
+                *ptr.offset(2),
+                *ptr.offset(3),
+                *ptr.offset(4),
+                *ptr.offset(5),
+                *ptr.offset(6),
+                *ptr.offset(7)
             );
         }
     }

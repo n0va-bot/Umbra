@@ -5,7 +5,7 @@ members = [
     "builder",
     "keyboard-server",
     "tick-server",
-    "SerV",
+    "SerV", "fb-server", "rtc-server", "pci-server", "power-server",
 ]
 default-members = ["builder"]
 resolver = "2"

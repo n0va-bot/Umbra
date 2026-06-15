@@ -136,6 +136,12 @@ pub extern "C" fn _start() -> ! {
     println!("[SerV] spawned keyboard-server, pid: {}", p1);
     let p2 = spawn("tick-server");
     println!("[SerV] spawned tick-server, pid: {}", p2);
+    let p4 = spawn("rtc-server");
+    println!("[SerV] spawned rtc-server, pid: {}", p4);
+    let p5 = spawn("pci-server");
+    println!("[SerV] spawned pci-server, pid: {}", p5);
+    let p6 = spawn("power-server");
+    println!("[SerV] spawned power-server, pid: {}", p6);
     let p3 = spawn("userspace");
     println!("[SerV] spawned userspace, pid: {}", p3);
 

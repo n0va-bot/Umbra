@@ -28,10 +28,20 @@ fn main() {
     }
 
     println!("Building userspace servers...");
-    for server in &["SerV", "userspace", "keyboard-server", "tick-server"] {
+    for server in &[
+        "SerV",
+        "userspace",
+        "keyboard-server",
+        "tick-server",
+        "rtc-server",
+        "pci-server",
+        "power-server",
+    ] {
         let dir = workspace_root.join(server);
         let status = Command::new("cargo")
             .arg("build")
+            .arg("--target")
+            .arg("x86_64-unknown-none")
             .current_dir(&dir)
             .status()
             .expect(&format!("Failed to run cargo build for {}", server));
@@ -63,6 +73,15 @@ fn main() {
     tar_builder
         .append_path_with_name(bin_dir.join("tick-server"), "tick-server")
         .expect("Failed to append tick-server");
+    tar_builder
+        .append_path_with_name(bin_dir.join("rtc-server"), "rtc-server")
+        .expect("Failed to append rtc-server");
+    tar_builder
+        .append_path_with_name(bin_dir.join("pci-server"), "pci-server")
+        .expect("Failed to append pci-server");
+    tar_builder
+        .append_path_with_name(bin_dir.join("power-server"), "power-server")
+        .expect("Failed to append power-server");
 
     tar_builder.finish().expect("Failed to finish tar builder");
 
