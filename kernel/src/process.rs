@@ -22,6 +22,12 @@ pub enum State {
     Exited,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cap {
+    Port(u16),
+    Irq(u8),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pid(pub u64);
 
@@ -78,6 +84,7 @@ pub struct Process {
     pub saved: SavedRegs,
     pub interrupt_frame: InterruptFrame,
     pub blocked_on_endpoint: Option<usize>,
+    pub caps: [Option<Cap>; 32],
 }
 
 pub const KERNEL_STACK_SIZE: usize = 4096 * KERNEL_STACK_PAGES;
@@ -182,6 +189,18 @@ impl ProcessTable {
 pub static PROCESSES: Mutex<ProcessTable> = Mutex::new(ProcessTable::new());
 
 pub fn schedule(after_idx: usize) -> Option<usize> {
+    while let Some(irq) = crate::interrupts::PENDING_IRQS.pop() {
+        let endpoint = crate::interrupts::IRQ_ENDPOINTS.lock()[irq as usize];
+        if let Some(ep_id) = endpoint {
+            let ep = crate::ipc::EndpointId(ep_id);
+            let msg = crate::ipc::Message::new(0xFFFFFFFF, &[irq]);
+            let mut ipc = crate::ipc::IPC.lock();
+            let _ = ipc.send(ep, msg);
+            drop(ipc);
+            wake_blocked_on_endpoint(ep_id);
+        }
+    }
+
     let table = PROCESSES.lock();
     for i in 1..=MAX_PROCESSES {
         let idx = (after_idx + i) % MAX_PROCESSES;
@@ -368,6 +387,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
         saved: SavedRegs::default(),
         interrupt_frame: InterruptFrame::default(),
         blocked_on_endpoint: None,
+        caps: [None; 32],
     };
 
     let index = PROCESSES.lock().insert(process);

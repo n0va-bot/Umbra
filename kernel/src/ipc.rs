@@ -236,7 +236,6 @@ impl IpcState {
 
     pub fn handle_kernel_call(&self, to: EndpointId, send_msg: &Message) -> Option<Message> {
         match to.0 {
-            15 => self.handle_keyboard_call(send_msg),
             16 => self.handle_tick_call(send_msg),
             _ => None,
         }
@@ -245,20 +244,6 @@ impl IpcState {
     pub fn handle_kernel_service(&self, to: EndpointId, _msg: &Message) -> bool {
         match to.0 {
             _ => false,
-        }
-    }
-
-    fn handle_keyboard_call(&self, msg: &Message) -> Option<Message> {
-        match msg.tag {
-            KB_GET_SCANCODE => {
-                if let Ok(queue) = crate::task::keyboard::SCANCODE_QUEUE.try_get() {
-                    if let Some(scancode) = queue.pop() {
-                        return Some(Message::new(0, &[scancode]));
-                    }
-                }
-                Some(Message::new(0, &[u64::MAX as u8]))
-            }
-            _ => None,
         }
     }
 

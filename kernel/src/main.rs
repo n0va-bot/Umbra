@@ -89,7 +89,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::syscall::init();
     umbra::ipc::init();
     umbra::serial_println!("[kernel] ipc initialized");
-    umbra::task::keyboard::ScancodeStream::init_scancode_queue();
 
     // Load userspace shell
     let (boot_frame, _) = Cr3::read();
@@ -103,9 +102,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         kernel_stack_slot,
         kernel_rsp: VirtAddr::new(0),
         user_rsp: 0,
-        saved: SavedRegs::default(),
-        interrupt_frame: process::InterruptFrame::default(),
+        saved: umbra::process::SavedRegs::default(),
+        interrupt_frame: umbra::process::InterruptFrame::default(),
         blocked_on_endpoint: None,
+        caps: [None; 32],
     };
 
     let kernel_index = {

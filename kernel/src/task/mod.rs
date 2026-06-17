@@ -1,11 +1,9 @@
+use alloc::boxed::Box;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-use alloc::boxed::Box;
-
 pub mod executor;
-pub mod keyboard;
 pub mod simple_executor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

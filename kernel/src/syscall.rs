@@ -99,6 +99,24 @@ extern "C" fn syscall_dispatch(
         }
     }
 
+    fn current_has_cap(cap: crate::process::Cap) -> bool {
+        let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+        if current == 1 {
+            return true;
+        }
+        if current != 0 {
+            let table = crate::process::PROCESSES.lock();
+            if let Some(p) = table.get(current) {
+                for c in p.caps.iter() {
+                    if *c == Some(cap) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     match syscall_nr {
         7 => {
             let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
@@ -133,6 +151,9 @@ extern "C" fn syscall_dispatch(
         }
         11 => {
             let port = rdi as u16;
+            if !current_has_cap(crate::process::Cap::Port(port)) {
+                return u64::MAX;
+            }
             unsafe {
                 let mut pm = x86_64::instructions::port::Port::<u8>::new(port);
                 pm.read() as u64
@@ -140,6 +161,9 @@ extern "C" fn syscall_dispatch(
         }
         12 => {
             let port = rdi as u16;
+            if !current_has_cap(crate::process::Cap::Port(port)) {
+                return u64::MAX;
+            }
             let val = rsi as u8;
             unsafe {
                 let mut pm = x86_64::instructions::port::Port::<u8>::new(port);
@@ -149,6 +173,9 @@ extern "C" fn syscall_dispatch(
         }
         13 => {
             let port = rdi as u16;
+            if !current_has_cap(crate::process::Cap::Port(port)) {
+                return u64::MAX;
+            }
             unsafe {
                 let mut pm = x86_64::instructions::port::Port::<u16>::new(port);
                 pm.read() as u64
@@ -156,6 +183,9 @@ extern "C" fn syscall_dispatch(
         }
         14 => {
             let port = rdi as u16;
+            if !current_has_cap(crate::process::Cap::Port(port)) {
+                return u64::MAX;
+            }
             let val = rsi as u16;
             unsafe {
                 let mut pm = x86_64::instructions::port::Port::<u16>::new(port);
@@ -165,6 +195,9 @@ extern "C" fn syscall_dispatch(
         }
         15 => {
             let port = rdi as u16;
+            if !current_has_cap(crate::process::Cap::Port(port)) {
+                return u64::MAX;
+            }
             unsafe {
                 let mut pm = x86_64::instructions::port::Port::<u32>::new(port);
                 pm.read() as u64
@@ -172,6 +205,9 @@ extern "C" fn syscall_dispatch(
         }
         16 => {
             let port = rdi as u16;
+            if !current_has_cap(crate::process::Cap::Port(port)) {
+                return u64::MAX;
+            }
             let val = rsi as u32;
             unsafe {
                 let mut pm = x86_64::instructions::port::Port::<u32>::new(port);
@@ -193,6 +229,45 @@ extern "C" fn syscall_dispatch(
             } else {
                 u64::MAX
             }
+        }
+        18 => {
+            let irq = rdi as u8;
+            let endpoint_id = rsi as usize;
+            if !current_has_cap(crate::process::Cap::Irq(irq)) {
+                return u64::MAX;
+            }
+            if irq < 16 {
+                crate::interrupts::IRQ_ENDPOINTS.lock()[irq as usize] = Some(endpoint_id);
+                0
+            } else {
+                u64::MAX
+            }
+        }
+        19 => {
+            let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
+            if current != 1 {
+                return u64::MAX;
+            }
+            let target_pid = rdi as usize;
+            let cap_type = rsi as u8;
+            let cap_arg = rdx as u16;
+
+            let cap = match cap_type {
+                0 => crate::process::Cap::Port(cap_arg),
+                1 => crate::process::Cap::Irq(cap_arg as u8),
+                _ => return u64::MAX,
+            };
+
+            let mut table = crate::process::PROCESSES.lock();
+            if let Some(p) = table.get_mut(target_pid) {
+                for slot in p.caps.iter_mut() {
+                    if slot.is_none() {
+                        *slot = Some(cap);
+                        return 0;
+                    }
+                }
+            }
+            u64::MAX
         }
 
         100 => {

@@ -3,6 +3,8 @@ use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use crossbeam_queue::ArrayQueue;
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -36,18 +38,20 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     crate::serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
-pub static TICKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static RESCHEDULE_NEEDED: AtomicBool = AtomicBool::new(false);
+pub static PENDING_NEXT: AtomicUsize = AtomicUsize::new(usize::MAX);
+pub static TICKS: AtomicUsize = AtomicUsize::new(0);
 
-pub static RESCHEDULE_NEEDED: core::sync::atomic::AtomicBool =
-    core::sync::atomic::AtomicBool::new(false);
+pub static IRQ_ENDPOINTS: spin::Mutex<[Option<usize>; 16]> = spin::Mutex::new([None; 16]);
 
-pub static PENDING_NEXT: core::sync::atomic::AtomicUsize =
-    core::sync::atomic::AtomicUsize::new(usize::MAX);
+lazy_static! {
+    pub static ref PENDING_IRQS: ArrayQueue<u8> = ArrayQueue::new(256);
+}
 
 const TIME_QUANTUM: u64 = 100;
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    let ticks = TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    let ticks = TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) as u64;
 
     let current = crate::process::CURRENT_PROCESS.load(core::sync::atomic::Ordering::SeqCst);
     if current != 0 && ticks > 0 && ticks % TIME_QUANTUM == 0 {
@@ -111,11 +115,8 @@ extern "x86-interrupt" fn general_protection_fault_handler(
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    use x86_64::instructions::port::Port;
-
-    let mut port = Port::new(0x60);
-    let scancode: u8 = unsafe { port.read() };
-    crate::task::keyboard::add_scancode(scancode);
+    let _ = PENDING_IRQS.push(1);
+    RESCHEDULE_NEEDED.store(true, Ordering::Release);
 
     unsafe {
         PICS.lock()
