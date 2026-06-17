@@ -5,7 +5,11 @@ members = [
     "builder",
     "keyboard-server",
     "tick-server",
-    "SerV", "fb-server", "rtc-server", "pci-server", "power-server",
+    "SerV",
+    "fb-server",
+    "rtc-server",
+    "pci-server",
+    "power-server",
 ]
 default-members = ["builder"]
 resolver = "2"
@@ -32,5 +36,17 @@ strip = "symbols"
 opt-level = "s"
 
 [profile.dev.package.tick-server]
+strip = "symbols"
+opt-level = "s"
+
+[profile.dev.package.rtc-server]
+strip = "symbols"
+opt-level = "s"
+
+[profile.dev.package.pci-server]
+strip = "symbols"
+opt-level = "s"
+
+[profile.dev.package.power-server]
 strip = "symbols"
 opt-level = "s"

@@ -61,27 +61,28 @@ fn main() {
         .join("x86_64-unknown-none")
         .join("debug");
 
-    tar_builder
-        .append_path_with_name(bin_dir.join("SerV"), "SerV")
-        .expect("Failed to append SerV");
-    tar_builder
-        .append_path_with_name(bin_dir.join("userspace"), "userspace")
-        .expect("Failed to append userspace");
-    tar_builder
-        .append_path_with_name(bin_dir.join("keyboard-server"), "keyboard-server")
-        .expect("Failed to append keyboard-server");
-    tar_builder
-        .append_path_with_name(bin_dir.join("tick-server"), "tick-server")
-        .expect("Failed to append tick-server");
-    tar_builder
-        .append_path_with_name(bin_dir.join("rtc-server"), "rtc-server")
-        .expect("Failed to append rtc-server");
-    tar_builder
-        .append_path_with_name(bin_dir.join("pci-server"), "pci-server")
-        .expect("Failed to append pci-server");
-    tar_builder
-        .append_path_with_name(bin_dir.join("power-server"), "power-server")
-        .expect("Failed to append power-server");
+    for server in &[
+        "SerV",
+        "userspace",
+        "keyboard-server",
+        "tick-server",
+        "rtc-server",
+        "pci-server",
+        "power-server",
+    ] {
+        let path = bin_dir.join(server);
+        let mut file = std::fs::File::open(&path).expect("Failed to open binary");
+        let mut data = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut data).expect("Failed to read binary");
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        tar_builder
+            .append_data(&mut header, server, data.as_slice())
+            .expect("Failed to append");
+    }
 
     tar_builder.finish().expect("Failed to finish tar builder");
 
