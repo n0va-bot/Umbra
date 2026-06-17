@@ -86,30 +86,30 @@
 - [x] Remove direct framebuffer access from syscall 0/2
 
 ### CMOS / RTC → userspace `rtc`
-- [ ] Port-I/O capability for ports `0x70`/`0x71`
+- [x] Port-I/O capability for ports `0x70`/`0x71`
 - [x] Move `cmos.rs` logic into userspace `rtc` process
 - [x] Shell `date` command → IPC to rtc server (in-kernel for now)
 - [x] Remove syscall 5
 
 ### PCI → userspace `pci-arbiter`
-- [ ] Port-I/O capability for `0xCF8`/`0xCFC`
+- [x] Port-I/O capability for `0xCF8`/`0xCFC`
 - [x] Move `pci.rs` bus walk into userspace
 - [ ] Hand out per-device capabilities to requesters
 - [x] Shell `lspci` → IPC to pci-arbiter (in-kernel for now)
 - [x] Remove syscall 6
 
 ### ACPI power → userspace power service
-- [ ] Port-I/O cap for PM1a control register
+- [x] Port-I/O cap for PM1a control register
 - [x] Move `acpi::power_off` into userspace
 - [x] Shell `poweroff` → IPC to power service (in-kernel for now)
 - [x] Remove syscall 4
 
 ### Keyboard → userspace `ps2-kbd` (or keep in-kernel short-term)
-- [ ] Move scancode IRQ handler + queue behind a capability
-- [ ] Userspace keyboard server reads port `0x60` via port cap
+- [x] Move scancode IRQ handler + queue behind a capability
+- [x] Userspace keyboard server reads port `0x60` via port cap
 - [x] Shell reads keys via IPC instead of syscall 1 (in-kernel for now)
 - [x] Remove syscall 1
-- [ ] (Optional) keep IRQ demux in kernel, deliver scancodes via IPC
+- [x] (Optional) keep IRQ demux in kernel, deliver scancodes via IPC
 
 ### Serial
 - [ ] Decision: keep in-kernel for boot logs (defensible) or move to `tty` server
@@ -123,11 +123,11 @@
 > `Port` cap; to map a physical region, a `Frame` cap; to talk to another
 > process, an `Endpoint` cap.
 
-- [ ] `Cap` type enum (`Endpoint`, `Port`, `Frame`, `Process`, …)
-- [ ] Per-process capability table (CSpace) with slot allocation
+- [x] `Cap` type enum (`Endpoint`, `Port`, `Frame`, `Process`, …)
+- [x] Per-process capability table (CSpace) with slot allocation
 - [ ] Capability derivation / delegation on `process::spawn`
 - [ ] Syscall argument validation: IPC only if caller holds `Endpoint` cap
-- [ ] Port-I/O syscall gated on `Port` cap (range-checked)
+- [x] Port-I/O syscall gated on `Port` cap (range-checked)
 - [ ] `mmap` syscall gated on `Frame` cap
 - [ ] Bootstrap: shell starts with caps to fb-server, rtc, pci-arbiter, power, keyboard — nothing else
 
