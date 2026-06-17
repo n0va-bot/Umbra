@@ -30,6 +30,7 @@ fn main() {
     println!("Building userspace servers...");
     for server in &[
         "SerV",
+        "fb-server",
         "userspace",
         "keyboard-server",
         "tick-server",
@@ -63,6 +64,7 @@ fn main() {
 
     for server in &[
         "SerV",
+        "fb-server",
         "userspace",
         "keyboard-server",
         "tick-server",

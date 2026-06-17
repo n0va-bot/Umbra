@@ -34,7 +34,7 @@ pub fn scan_buses() {
                         let class_code = (reg8 >> 24) as u8;
                         let subclass = (reg8 >> 16) as u8;
 
-                        crate::println!(
+                        crate::serial_println!(
                             "Bus {:02X} | Dev {:02X} | Func {:02X} => Vendor: {:04X}, Device: {:04X} | Class: {:02X}, Sub: {:02X}",
                             bus,
                             device,

@@ -244,10 +244,14 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
     {
         let mut table = PROCESSES.lock();
         if let Some(old_proc) = table.get_mut(old_idx) {
-            old_proc.user_rsp = crate::syscall::USER_RSP_COPY;
+            unsafe {
+                old_proc.user_rsp = crate::syscall::USER_RSP_COPY;
+            }
         }
         let new_proc = table.get(new_idx).expect("switch_to: invalid new_idx");
-        crate::syscall::USER_RSP_COPY = new_proc.user_rsp;
+        unsafe {
+            crate::syscall::USER_RSP_COPY = new_proc.user_rsp;
+        }
 
         new_cr3 = new_proc.cr3;
         new_kernel_stack_top = new_proc.kernel_stack_top;

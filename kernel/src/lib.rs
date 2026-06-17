@@ -13,7 +13,6 @@ pub mod acpi;
 pub mod allocator;
 pub mod cmos;
 pub mod elf_loader;
-pub mod framebuffer;
 pub mod gdt;
 pub mod interrupts;
 pub mod ipc;

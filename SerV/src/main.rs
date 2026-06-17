@@ -132,6 +132,8 @@ pub extern "C" fn _start() -> ! {
 
     println!("[SerV] Claimed endpoint 1. Starting core stage...");
 
+    let p_fb = spawn("fb-server");
+    println!("[SerV] spawned fb-server, pid: {}", p_fb);
     let p1 = spawn("keyboard-server");
     println!("[SerV] spawned keyboard-server, pid: {}", p1);
     let p2 = spawn("tick-server");

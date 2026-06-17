@@ -50,3 +50,7 @@ opt-level = "s"
 [profile.dev.package.power-server]
 strip = "symbols"
 opt-level = "s"
+
+[profile.dev.package.fb-server]
+strip = "symbols"
+opt-level = "s"

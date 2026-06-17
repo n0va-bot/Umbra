@@ -242,49 +242,8 @@ impl IpcState {
         }
     }
 
-    pub fn handle_kernel_service(&self, to: EndpointId, msg: &Message) -> bool {
+    pub fn handle_kernel_service(&self, to: EndpointId, _msg: &Message) -> bool {
         match to.0 {
-            11 => self.handle_fb_message(msg),
-            _ => false,
-        }
-    }
-
-    fn handle_fb_message(&self, msg: &Message) -> bool {
-        use crate::framebuffer;
-
-        match msg.tag {
-            FB_WRITE_CHAR => {
-                if !msg.data.is_empty() {
-                    let byte = msg.data[0];
-                    if byte == 8 {
-                        framebuffer::backspace();
-                    } else {
-                        crate::print!("{}", byte as char);
-                    }
-                }
-                true
-            }
-            FB_BACKSPACE => {
-                crate::framebuffer::backspace();
-                true
-            }
-            FB_CLEAR_SCREEN => {
-                crate::framebuffer::clear_screen();
-                true
-            }
-            FB_WRITE_STRING => {
-                for &byte in &msg.data {
-                    if byte == 0 {
-                        break;
-                    }
-                    if byte == 8 {
-                        crate::framebuffer::backspace();
-                    } else {
-                        crate::print!("{}", byte as char);
-                    }
-                }
-                true
-            }
             _ => false,
         }
     }

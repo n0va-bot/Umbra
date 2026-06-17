@@ -1,4 +1,4 @@
-use crate::{gdt, println};
+use crate::gdt;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
@@ -33,7 +33,7 @@ pub fn init_idt() {
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    crate::serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
 pub static TICKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
@@ -74,16 +74,16 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
 
-    println!("EXCEPTION: PAGE FAULT");
-    println!("Accessed Address: {:?}", Cr2::read());
-    println!("Error Code: {:?}", error_code);
-    println!("{:#?}", stack_frame);
+    crate::serial_println!("EXCEPTION: PAGE FAULT");
+    crate::serial_println!("Accessed Address: {:?}", Cr2::read());
+    crate::serial_println!("Error Code: {:?}", error_code);
+    crate::serial_println!("{:#?}", stack_frame);
 
     // Print the instruction bytes
     if stack_frame.instruction_pointer.as_u64() >= 0x400000 {
         unsafe {
             let ptr = stack_frame.instruction_pointer.as_ptr::<u8>();
-            println!(
+            crate::serial_println!(
                 "Instruction bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
                 *ptr.offset(0),
                 *ptr.offset(1),
@@ -104,9 +104,9 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    println!("EXCEPTION: GENERAL PROTECTION FAULT");
-    println!("Error Code: {:#X}", error_code);
-    println!("{:#?}", stack_frame);
+    crate::serial_println!("EXCEPTION: GENERAL PROTECTION FAULT");
+    crate::serial_println!("Error Code: {:#X}", error_code);
+    crate::serial_println!("{:#?}", stack_frame);
     hlt_loop();
 }
 

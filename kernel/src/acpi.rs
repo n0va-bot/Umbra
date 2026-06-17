@@ -46,7 +46,7 @@ impl AcpiHandler for UmbraAcpiHandler {
 pub fn power_off() {
     let offset = PHYSICAL_MEMORY_OFFSET.load(Ordering::SeqCst);
     if offset == 0 {
-        crate::println!("ACPI not initialized");
+        crate::serial_println!("ACPI not initialized");
         return;
     }
 
@@ -61,12 +61,12 @@ pub fn power_off() {
                     port.write(0x2000);
                 }
             } else {
-                crate::println!("No PM1A control block found");
+                crate::serial_println!("No PM1A control block found");
             }
         } else {
-            crate::println!("No FADT found");
+            crate::serial_println!("No FADT found");
         }
     } else {
-        crate::println!("Failed to find ACPI tables");
+        crate::serial_println!("Failed to find ACPI tables");
     }
 }

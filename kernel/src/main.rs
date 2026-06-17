@@ -10,7 +10,6 @@ use bootloader_api::config::{BootloaderConfig, Mapping};
 use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use umbra::memory::BootInfoFrameAllocator;
-use umbra::println;
 use umbra::process::{self, PROCESSES, Pid, Process, SavedRegs, State};
 use umbra::task::executor::Executor;
 use x86_64::VirtAddr;
@@ -41,13 +40,32 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         info.pixel_format,
         info.bytes_per_pixel
     );
-    umbra::framebuffer::init(framebuffer.buffer_mut(), info);
-    umbra::serial_println!("[kernel] framebuffer initialized");
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
 
     umbra::init();
     umbra::serial_println!("[kernel] init done");
+
+    let fb_vaddr = VirtAddr::new(framebuffer.buffer().as_ptr() as u64);
+    let fb_paddr = unsafe { umbra::memory::translate_addr(fb_vaddr, phys_mem_offset).unwrap() };
+    *umbra::syscall::FB_INFO.lock() = Some(umbra::syscall::SysFbInfo {
+        phys_addr: fb_paddr.as_u64(),
+        byte_len: framebuffer.buffer().len(),
+        width: info.width,
+        height: info.height,
+        pixel_format: match info.pixel_format {
+            bootloader_api::info::PixelFormat::Rgb => 0,
+            bootloader_api::info::PixelFormat::Bgr => 1,
+            bootloader_api::info::PixelFormat::U8 => 2,
+            _ => 3, // Unknown
+        },
+        bytes_per_pixel: info.bytes_per_pixel,
+        stride: info.stride,
+    });
+    umbra::serial_println!(
+        "[kernel] framebuffer info saved (paddr: {:#X})",
+        fb_paddr.as_u64()
+    );
 
     let mut mapper = unsafe { umbra::memory::init(phys_mem_offset) };
     let mut frame_allocator =
@@ -167,7 +185,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     umbra::serial_println!("[PANIC] {}", info);
-    println!("{}", info);
     umbra::hlt_loop();
 }
 

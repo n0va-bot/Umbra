@@ -20,6 +20,20 @@ pub fn init() {
 
 pub static mut USER_RSP_COPY: u64 = 0;
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SysFbInfo {
+    pub phys_addr: u64,
+    pub byte_len: usize,
+    pub width: usize,
+    pub height: usize,
+    pub pixel_format: u8,
+    pub bytes_per_pixel: usize,
+    pub stride: usize,
+}
+
+pub static FB_INFO: spin::Mutex<Option<SysFbInfo>> = spin::Mutex::new(None);
+
 #[unsafe(naked)]
 extern "C" fn syscall_entry() {
     naked_asm!(
@@ -164,6 +178,21 @@ extern "C" fn syscall_dispatch(
                 pm.write(val);
             }
             0
+        }
+        17 => {
+            let info_ptr = rdi as *mut SysFbInfo;
+            let info_vaddr = x86_64::VirtAddr::new(rdi);
+            if crate::process::validate_user_range(info_vaddr, core::mem::size_of::<SysFbInfo>())
+                .is_none()
+            {
+                return u64::MAX;
+            }
+            if let Some(info) = *FB_INFO.lock() {
+                unsafe { *info_ptr = info };
+                0
+            } else {
+                u64::MAX
+            }
         }
 
         100 => {

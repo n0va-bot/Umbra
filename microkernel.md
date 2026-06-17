@@ -80,8 +80,8 @@
 > capabilities.
 
 ### Framebuffer → userspace `fb-server`
-- [ ] `mmap_framebuffer()` — map physical FB region into caller's page table
-- [ ] Extract `framebuffer.rs` rendering into userspace binary
+- [x] `mmap_framebuffer()` — map physical FB region into caller's page table
+- [x] Extract `framebuffer.rs` rendering into userspace binary
 - [x] Shell talks to fb-server via IPC (write, clear, backspace) (in-kernel for now)
 - [x] Remove direct framebuffer access from syscall 0/2
 
