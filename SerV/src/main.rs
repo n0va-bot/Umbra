@@ -94,7 +94,7 @@ fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
     if result == 0 { Ok(()) } else { Err(()) }
 }
 
-const FB_SERVER: usize = 1001;
+const FB_SERVER: usize = 11;
 const FB_WRITE_CHAR: u32 = 1;
 
 struct Stdout;

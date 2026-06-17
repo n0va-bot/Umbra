@@ -65,8 +65,13 @@ fn ipc_recv(endpoint: usize, msg: &mut Message) -> Result<(), ()> {
 }
 
 fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
-    let result = unsafe { syscall(100, endpoint as u64, msg as *const Message as u64, 0, 0, 0) };
-    if result == 0 { Ok(()) } else { Err(()) }
+    loop {
+        let result = unsafe { syscall(100, endpoint as u64, msg as *const Message as u64, 0, 0, 0) };
+        if result == 0 { return Ok(()); }
+        if result == u64::MAX { return Err(()); }
+        // Queue full, yield and retry
+        unsafe { syscall(7, 0, 0, 0, 0, 0) }; // sys_yield
+    }
 }
 
 fn sys_claim_endpoint(endpoint: usize) -> Result<(), ()> {
@@ -90,8 +95,8 @@ unsafe fn pci_read_u32(bus: u8, device: u8, func: u8, offset: u8) -> u32 {
     }
 }
 
-const PCI_SERVER: usize = 1003;
-const FB_SERVER: usize = 1001;
+const PCI_SERVER: usize = 13;
+const FB_SERVER: usize = 11;
 
 fn print_str(s: &str) {
     for c in s.bytes() {

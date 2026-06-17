@@ -81,20 +81,24 @@ fn ipc_recv(endpoint: usize, msg: &mut Message) -> Result<(), ()> {
 }
 
 fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
-    let result = unsafe {
-        syscall(
-            SYS_IPC_SEND,
-            endpoint as u64,
-            msg as *const Message as u64,
-            0,
-            0,
-            0,
-        )
-    };
-    if result == 0 { Ok(()) } else { Err(()) }
+    loop {
+        let result = unsafe {
+            syscall(
+                SYS_IPC_SEND,
+                endpoint as u64,
+                msg as *const Message as u64,
+                0,
+                0,
+                0,
+            )
+        };
+        if result == 0 { return Ok(()); }
+        if result == u64::MAX { return Err(()); }
+        unsafe { syscall(7, 0, 0, 0, 0, 0) };
+    }
 }
 
-const RAW_TICK: usize = 1006;
+const RAW_TICK: usize = 16;
 const TICK_GET: u32 = 1;
 
 #[unsafe(no_mangle)]

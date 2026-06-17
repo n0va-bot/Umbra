@@ -87,20 +87,20 @@
 
 ### CMOS / RTC → userspace `rtc`
 - [ ] Port-I/O capability for ports `0x70`/`0x71`
-- [ ] Move `cmos.rs` logic into userspace `rtc` process
+- [x] Move `cmos.rs` logic into userspace `rtc` process
 - [x] Shell `date` command → IPC to rtc server (in-kernel for now)
 - [x] Remove syscall 5
 
 ### PCI → userspace `pci-arbiter`
 - [ ] Port-I/O capability for `0xCF8`/`0xCFC`
-- [ ] Move `pci.rs` bus walk into userspace
+- [x] Move `pci.rs` bus walk into userspace
 - [ ] Hand out per-device capabilities to requesters
 - [x] Shell `lspci` → IPC to pci-arbiter (in-kernel for now)
 - [x] Remove syscall 6
 
 ### ACPI power → userspace power service
 - [ ] Port-I/O cap for PM1a control register
-- [ ] Move `acpi::power_off` into userspace
+- [x] Move `acpi::power_off` into userspace
 - [x] Shell `poweroff` → IPC to power service (in-kernel for now)
 - [x] Remove syscall 4
 

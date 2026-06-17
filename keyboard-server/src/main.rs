@@ -81,20 +81,24 @@ fn ipc_recv(endpoint: usize, msg: &mut Message) -> Result<(), ()> {
 }
 
 fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
-    let result = unsafe {
-        syscall(
-            SYS_IPC_SEND,
-            endpoint as u64,
-            msg as *const Message as u64,
-            0,
-            0,
-            0,
-        )
-    };
-    if result == 0 { Ok(()) } else { Err(()) }
+    loop {
+        let result = unsafe {
+            syscall(
+                SYS_IPC_SEND,
+                endpoint as u64,
+                msg as *const Message as u64,
+                0,
+                0,
+                0,
+            )
+        };
+        if result == 0 { return Ok(()); }
+        if result == u64::MAX { return Err(()); }
+        unsafe { syscall(7, 0, 0, 0, 0, 0) };
+    }
 }
 
-const RAW_KEYBOARD: usize = 1005;
+const RAW_KEYBOARD: usize = 15;
 const KB_GET_SCANCODE: u32 = 1;
 const KB_GET_CHAR: u32 = 2;
 const KB_GET_CHAR_POLL: u32 = 3;

@@ -191,12 +191,12 @@ pub enum SendError {
     QueueFull(Message),
 }
 
-pub const FB_SERVER: EndpointId = EndpointId(1001);
-pub const RTC_SERVER: EndpointId = EndpointId(1002);
-pub const PCI_SERVER: EndpointId = EndpointId(1003);
-pub const POWER_SERVER: EndpointId = EndpointId(1004);
-pub const RAW_KEYBOARD: EndpointId = EndpointId(1005);
-pub const RAW_TICK: EndpointId = EndpointId(1006);
+pub const FB_SERVER: EndpointId = EndpointId(11);
+pub const RTC_SERVER: EndpointId = EndpointId(12);
+pub const PCI_SERVER: EndpointId = EndpointId(13);
+pub const POWER_SERVER: EndpointId = EndpointId(14);
+pub const RAW_KEYBOARD: EndpointId = EndpointId(15);
+pub const RAW_TICK: EndpointId = EndpointId(16);
 
 pub const FB_WRITE_CHAR: u32 = 1;
 pub const FB_BACKSPACE: u32 = 2;
@@ -236,15 +236,15 @@ impl IpcState {
 
     pub fn handle_kernel_call(&self, to: EndpointId, send_msg: &Message) -> Option<Message> {
         match to.0 {
-            1005 => self.handle_keyboard_call(send_msg),
-            1006 => self.handle_tick_call(send_msg),
+            15 => self.handle_keyboard_call(send_msg),
+            16 => self.handle_tick_call(send_msg),
             _ => None,
         }
     }
 
     pub fn handle_kernel_service(&self, to: EndpointId, msg: &Message) -> bool {
         match to.0 {
-            1001 => self.handle_fb_message(msg),
+            11 => self.handle_fb_message(msg),
             _ => false,
         }
     }

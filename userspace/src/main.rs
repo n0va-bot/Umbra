@@ -33,10 +33,10 @@ impl Message {
     }
 }
 
-const FB_SERVER: usize = 1001;
-const RTC_SERVER: usize = 1002;
-const PCI_SERVER: usize = 1003;
-const POWER_SERVER: usize = 1004;
+const FB_SERVER: usize = 11;
+const RTC_SERVER: usize = 12;
+const PCI_SERVER: usize = 13;
+const POWER_SERVER: usize = 14;
 
 const FB_WRITE_CHAR: u32 = 1;
 const FB_BACKSPACE: u32 = 2;
@@ -93,17 +93,22 @@ fn ipc_recv(endpoint: usize, msg: &mut Message) -> Result<(), ()> {
 }
 
 fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
-    let result = unsafe {
-        syscall(
-            SYS_IPC_SEND,
-            endpoint as u64,
-            msg as *const Message as u64,
-            0,
-            0,
-            0,
-        )
-    };
-    if result == 0 { Ok(()) } else { Err(()) }
+    loop {
+        let result = unsafe {
+            syscall(
+                SYS_IPC_SEND,
+                endpoint as u64,
+                msg as *const Message as u64,
+                0,
+                0,
+                0,
+            )
+        };
+        if result == 0 { return Ok(()); }
+        if result == u64::MAX { return Err(()); }
+        // Queue full, yield and retry
+        unsafe { sys_yield() };
+    }
 }
 
 fn lookup_service(name: &str, reply_endpoint: usize) -> Option<usize> {

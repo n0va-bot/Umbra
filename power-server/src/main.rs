@@ -55,7 +55,7 @@ fn sys_claim_endpoint(endpoint: usize) -> Result<(), ()> {
     if result == 0 { Ok(()) } else { Err(()) }
 }
 
-const POWER_SERVER: usize = 1004;
+const POWER_SERVER: usize = 14;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
@@ -70,7 +70,9 @@ pub extern "C" fn _start() -> ! {
         if ipc_recv(POWER_SERVER, &mut msg).is_ok() {
             if msg.tag == 1 {
                 // POWER_OFF
-                // QEMU ACPI PM1a control port is typically 0x604
+                unsafe { sys_outw(0xb004, 0x2000) };
+                
+                // QEMU ACPI PM1a control port is typically 0x604 on Q35
                 // We hardcode it here until we port full ACPI parsing to userspace
                 unsafe { sys_outw(0x604, 0x2000) };
 
