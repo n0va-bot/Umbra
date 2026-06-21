@@ -154,7 +154,7 @@
 > No inline `mapper.map_to` for user stack in `kernel_main`.
 
 - [x] `umbra::init()` — GDT, IDT, PIC, enable interrupts
-- [ ] Split into `arch::init()`, `mem::init(boot_info)`, `ipc::init()`, `process::init()`
+- [x] Split into `arch::init()`, `mem::init(boot_info)`, `ipc::init()`, `process::init()`
 - [x] Move user stack mapping into `process::spawn`
 - [x] `kernel_main` becomes a short init chain + `schedule()` forever
 - [x] Remove inline ELF load / stack map / switch_to boilerplate from `main.rs`
