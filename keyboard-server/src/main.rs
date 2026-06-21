@@ -165,7 +165,6 @@ pub extern "C" fn _start() -> ! {
         if ipc_recv(my_endpoint, &mut msg).is_ok() {
             if msg.tag == IRQ_MESSAGE_TAG {
                 // IRQ fired, read port 0x64 until empty
-                println!("[kb-server] IRQ received!");
                 while sys_inb(0x64) & 1 == 1 {
                     let scancode = sys_inb(0x60);
                     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
@@ -181,7 +180,6 @@ pub extern "C" fn _start() -> ! {
                             }
 
                             if char_code != 0 {
-                                println!("[kb-server] key: {}", char_code);
                                 if let Some((endpoint, reply_tag)) = pending_reply.take() {
                                     let mut reply = Message::empty();
                                     reply.tag = reply_tag;
