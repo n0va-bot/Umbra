@@ -5,11 +5,11 @@
 #![reexport_test_harness_main = "test_main"]
 
 use core::panic::PanicInfo;
-use umbra::println;
+use umbra::serial_println;
 
 #[test_case]
 fn test_println() {
-    println!("test_println output");
+    serial_println!("test_println output");
 }
 
 #[unsafe(no_mangle)]

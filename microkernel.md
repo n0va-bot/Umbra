@@ -94,9 +94,9 @@
 ### PCI → userspace `pci-arbiter`
 - [x] Port-I/O capability for `0xCF8`/`0xCFC`
 - [x] Move `pci.rs` bus walk into userspace
-- [ ] Hand out per-device capabilities to requesters
 - [x] Shell `lspci` → IPC to pci-arbiter (in-kernel for now)
 - [x] Remove syscall 6
+- [ ] Deferred — Hand out per-device capabilities to requesters (requires driver model)
 
 ### ACPI power → userspace power service
 - [x] Port-I/O cap for PM1a control register
@@ -112,7 +112,7 @@
 - [x] (Optional) keep IRQ demux in kernel, deliver scancodes via IPC
 
 ### Serial
-- [ ] Decision: keep in-kernel for boot logs (defensible) or move to `tty` server
+- [x] Decision: keep in-kernel for boot logs.
 - [x] Currently in-kernel (`serial.rs`) — fine for now
 
 ---

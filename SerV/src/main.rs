@@ -66,8 +66,8 @@ fn spawn(name: &str) -> u64 {
     unsafe { syscall(SYS_SPAWN, name.as_ptr() as u64, name.len() as u64, 0, 0, 0) }
 }
 
-fn grant_cap(pid: u64, cap_type: u8, cap_arg: u16) -> bool {
-    unsafe { syscall(19, pid, cap_type as u64, cap_arg as u64, 0, 0) == 0 }
+fn grant_cap(pid: u64, cap_type: u8, cap_arg: u16, arg_extra: u64) -> bool {
+    unsafe { syscall(19, pid, cap_type as u64, cap_arg as u64, arg_extra, 0) == 0 }
 }
 
 fn ipc_recv(endpoint: usize, msg: &mut Message) -> Result<(), ()> {
@@ -138,34 +138,54 @@ pub extern "C" fn _start() -> ! {
 
     let p_fb = spawn("fb-server");
     println!("[SerV] spawned fb-server, pid: {}", p_fb);
+    grant_cap(p_fb, 2, 11, 0);
+    grant_cap(p_fb, 3, 0, 0);
+
     let p1 = spawn("keyboard-server");
     println!("[SerV] spawned keyboard-server, pid: {}", p1);
-    if !grant_cap(p1, 0, 0x60) {
+    grant_cap(p1, 2, 1, 0);
+    if !grant_cap(p1, 0, 0x60, 0) {
         println!("[SerV] failed to grant port 0x60");
     }
-    if !grant_cap(p1, 0, 0x64) {
+    if !grant_cap(p1, 0, 0x64, 0) {
         println!("[SerV] failed to grant port 0x64");
     }
-    if !grant_cap(p1, 1, 1) {
+    if !grant_cap(p1, 1, 1, 0) {
         println!("[SerV] failed to grant IRQ 1");
     }
+
     let p2 = spawn("tick-server");
     println!("[SerV] spawned tick-server, pid: {}", p2);
+    grant_cap(p2, 2, 1, 0);
+    grant_cap(p2, 2, 16, 0);
+
     let p4 = spawn("rtc-server");
     println!("[SerV] spawned rtc-server, pid: {}", p4);
-    grant_cap(p4, 0, 0x70);
-    grant_cap(p4, 0, 0x71);
+    grant_cap(p4, 2, 12, 0);
+    grant_cap(p4, 0, 0x70, 0);
+    grant_cap(p4, 0, 0x71, 0);
+
     let p5 = spawn("pci-server");
     println!("[SerV] spawned pci-server, pid: {}", p5);
-    grant_cap(p5, 0, 0xCF8);
-    grant_cap(p5, 0, 0xCFC);
+    grant_cap(p5, 2, 13, 0);
+    grant_cap(p5, 0, 0xCF8, 0);
+    grant_cap(p5, 0, 0xCFC, 0);
+
     let p6 = spawn("power-server");
     println!("[SerV] spawned power-server, pid: {}", p6);
-    grant_cap(p6, 0, 0xb004);
-    grant_cap(p6, 0, 0x604);
-    grant_cap(p6, 0, 0x501);
+    grant_cap(p6, 2, 14, 0);
+    grant_cap(p6, 0, 0xb004, 0);
+    grant_cap(p6, 0, 0x604, 0);
+    grant_cap(p6, 0, 0x501, 0);
+
     let p3 = spawn("userspace");
     println!("[SerV] spawned userspace, pid: {}", p3);
+    grant_cap(p3, 2, 1, 0);
+    grant_cap(p3, 2, 11, 0);
+    grant_cap(p3, 2, 12, 0);
+    grant_cap(p3, 2, 13, 0);
+    grant_cap(p3, 2, 14, 0);
+    grant_cap(p3, 2, 16, 0);
 
     println!("[SerV] Entering service manager loop.");
 

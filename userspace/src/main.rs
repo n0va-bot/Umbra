@@ -104,8 +104,12 @@ fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
                 0,
             )
         };
-        if result == 0 { return Ok(()); }
-        if result == u64::MAX { return Err(()); }
+        if result == 0 {
+            return Ok(());
+        }
+        if result == u64::MAX {
+            return Err(());
+        }
         // Queue full, yield and retry
         unsafe { sys_yield() };
     }

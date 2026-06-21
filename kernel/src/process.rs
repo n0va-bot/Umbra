@@ -26,6 +26,8 @@ pub enum State {
 pub enum Cap {
     Port(u16),
     Irq(u8),
+    Endpoint(usize),
+    Frame(u64, usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -85,6 +87,20 @@ pub struct Process {
     pub interrupt_frame: InterruptFrame,
     pub blocked_on_endpoint: Option<usize>,
     pub caps: [Option<Cap>; 32],
+}
+
+impl Process {
+    pub fn has_cap(&self, cap: &Cap) -> bool {
+        self.caps.iter().any(|c| match (c, cap) {
+            (Some(Cap::Port(p1)), Cap::Port(p2)) => p1 == p2,
+            (Some(Cap::Irq(i1)), Cap::Irq(i2)) => i1 == i2,
+            (Some(Cap::Endpoint(e1)), Cap::Endpoint(e2)) => e1 == e2,
+            (Some(Cap::Frame(addr1, len1)), Cap::Frame(addr2, len2)) => {
+                *addr1 <= *addr2 && (*addr1 + *len1 as u64) >= (*addr2 + *len2 as u64)
+            }
+            _ => false,
+        })
+    }
 }
 
 pub const KERNEL_STACK_SIZE: usize = 4096 * KERNEL_STACK_PAGES;
@@ -642,4 +658,53 @@ pub fn map_physical_region(vaddr: VirtAddr, paddr: PhysAddr, size: usize) -> Res
     }
 
     Ok(())
+}
+
+pub fn init(ramdisk_addr: u64, ramdisk_len: usize) -> usize {
+    let (kernel_stack_slot, kernel_stack_top) = allocate_kernel_stack();
+
+    let (boot_frame, _) = x86_64::registers::control::Cr3::read();
+
+    let kernel_process = Process {
+        pid: Pid::alloc(),
+        state: State::Running,
+        cr3: boot_frame.start_address(),
+        kernel_stack_top,
+        kernel_stack_slot,
+        kernel_rsp: VirtAddr::new(0),
+        user_rsp: 0,
+        saved: SavedRegs::default(),
+        interrupt_frame: InterruptFrame::default(),
+        blocked_on_endpoint: None,
+        caps: [None; 32],
+    };
+
+    let kernel_index = {
+        let mut table = PROCESSES.lock();
+        let index = table.insert(kernel_process);
+        table.set_current(index);
+        index
+    };
+
+    let ramdisk = unsafe { core::slice::from_raw_parts(ramdisk_addr as *const u8, ramdisk_len) };
+
+    let archive = crate::tar::TarArchive::new(ramdisk);
+    for entry in archive.iter() {
+        crate::serial_println!(
+            "[kernel] found in initramfs: {}, size: {}",
+            entry.name,
+            entry.size
+        );
+        if entry.size > 0 && entry.name == "SerV" {
+            let mut allocator_guard = crate::memory::FRAME_ALLOCATOR.lock();
+            let allocator = allocator_guard.as_mut().unwrap();
+            spawn(entry.data, allocator);
+            crate::serial_println!("[kernel] {} spawned", entry.name);
+            break;
+        }
+    }
+
+    *crate::memory::INITRAMFS.lock() = Some(ramdisk);
+
+    kernel_index
 }

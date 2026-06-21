@@ -9,11 +9,9 @@ extern crate alloc;
 use bootloader_api::config::{BootloaderConfig, Mapping};
 use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use umbra::memory::BootInfoFrameAllocator;
-use umbra::process::{self, PROCESSES, Pid, Process, SavedRegs, State};
+use umbra::process::{self, PROCESSES, State};
 use umbra::task::executor::Executor;
 use x86_64::VirtAddr;
-use x86_64::registers::control::Cr3;
 
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
@@ -43,7 +41,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
 
-    umbra::init();
+    umbra::arch::init();
     umbra::serial_println!("[kernel] init done");
 
     let fb_vaddr = VirtAddr::new(framebuffer.buffer().as_ptr() as u64);
@@ -67,22 +65,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         fb_paddr.as_u64()
     );
 
-    let mut mapper = unsafe { umbra::memory::init(phys_mem_offset) };
-    let mut frame_allocator =
-        unsafe { BootInfoFrameAllocator::init(&mut boot_info.memory_regions) };
+    let ramdisk_addr = boot_info
+        .ramdisk_addr
+        .into_option()
+        .expect("No ramdisk found");
+    let ramdisk_len = boot_info.ramdisk_len as usize;
 
-    umbra::allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("heap initialization failed");
-    umbra::serial_println!("[kernel] heap initialized");
-
-    *umbra::memory::FRAME_ALLOCATOR.lock() = Some(frame_allocator);
-
-    umbra::memory::store_phys_mem_offset(phys_mem_offset);
-    umbra::memory::store_boot_pml4();
-    umbra::serial_println!(
-        "[kernel] phys_mem_offset stored at {:#X}",
-        phys_mem_offset.as_u64()
-    );
+    let mut _mapper = unsafe { umbra::memory::init_all(boot_info) };
 
     umbra::acpi::init(phys_mem_offset.as_u64());
     umbra::serial_println!("[kernel] acpi initialized");
@@ -90,55 +79,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::ipc::init();
     umbra::serial_println!("[kernel] ipc initialized");
 
-    // Load userspace shell
-    let (boot_frame, _) = Cr3::read();
-    let (kernel_stack_slot, kernel_stack_top) = process::allocate_kernel_stack();
-
-    let kernel_process = Process {
-        pid: Pid::alloc(),
-        state: State::Running,
-        cr3: boot_frame.start_address(),
-        kernel_stack_top,
-        kernel_stack_slot,
-        kernel_rsp: VirtAddr::new(0),
-        user_rsp: 0,
-        saved: umbra::process::SavedRegs::default(),
-        interrupt_frame: umbra::process::InterruptFrame::default(),
-        blocked_on_endpoint: None,
-        caps: [None; 32],
-    };
-
-    let kernel_index = {
-        let mut table = PROCESSES.lock();
-        let index = table.insert(kernel_process);
-        table.set_current(index);
-        index
-    };
-
-    let ramdisk_addr = boot_info
-        .ramdisk_addr
-        .into_option()
-        .expect("No ramdisk found");
-    let ramdisk_len = boot_info.ramdisk_len as usize;
-    let ramdisk = unsafe { core::slice::from_raw_parts(ramdisk_addr as *const u8, ramdisk_len) };
-
-    let archive = umbra::tar::TarArchive::new(ramdisk);
-    for entry in archive.iter() {
-        umbra::serial_println!(
-            "[kernel] found in initramfs: {}, size: {}",
-            entry.name,
-            entry.size
-        );
-        if entry.size > 0 && entry.name == "SerV" {
-            let mut allocator_guard = umbra::memory::FRAME_ALLOCATOR.lock();
-            let allocator = allocator_guard.as_mut().unwrap();
-            process::spawn(entry.data, allocator);
-            umbra::serial_println!("[kernel] {} spawned", entry.name);
-            break;
-        }
-    }
-
-    *umbra::memory::INITRAMFS.lock() = Some(ramdisk);
+    let kernel_index = umbra::process::init(ramdisk_addr, ramdisk_len);
 
     let mut executor = Executor::new();
 
@@ -178,6 +119,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[cfg(test)]
     test_main();
+
+    let mut executor = Executor::new();
 }
 
 // This function is called on panic (yes, I'm even copying the comments)

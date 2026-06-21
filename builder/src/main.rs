@@ -127,6 +127,8 @@ fn main() {
         .arg("-enable-kvm")
         .arg("-display")
         .arg("gtk,zoom-to-fit=on")
+        .arg("-serial")
+        .arg("stdio")
         .status()
         .expect("Failed to run QEMU");
 

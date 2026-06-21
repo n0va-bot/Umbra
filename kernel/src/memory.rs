@@ -78,6 +78,31 @@ pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static>
     }
 }
 
+pub unsafe fn init_all(
+    boot_info: &'static mut bootloader_api::BootInfo,
+) -> OffsetPageTable<'static> {
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
+
+    let mut mapper = unsafe { init(phys_mem_offset) };
+    let mut frame_allocator =
+        unsafe { BootInfoFrameAllocator::init(&mut boot_info.memory_regions) };
+
+    crate::allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("heap initialization failed");
+    crate::serial_println!("[kernel] heap initialized");
+
+    *FRAME_ALLOCATOR.lock() = Some(frame_allocator);
+
+    store_phys_mem_offset(phys_mem_offset);
+    store_boot_pml4();
+    crate::serial_println!(
+        "[kernel] phys_mem_offset stored at {:#X}",
+        phys_mem_offset.as_u64()
+    );
+
+    mapper
+}
+
 pub unsafe fn create_mapper_for_pml4(pml4_phys: PhysAddr) -> OffsetPageTable<'static> {
     let offset = get_phys_mem_offset();
     let pml4_virt = offset + pml4_phys.as_u64();

@@ -25,11 +25,17 @@ pub mod tar;
 pub mod task;
 pub mod userspace;
 
+pub mod arch {
+    pub fn init() {
+        crate::gdt::init();
+        crate::interrupts::init_idt();
+        unsafe { crate::interrupts::PICS.lock().initialize() };
+        x86_64::instructions::interrupts::enable();
+    }
+}
+
 pub fn init() {
-    gdt::init();
-    interrupts::init_idt();
-    unsafe { interrupts::PICS.lock().initialize() };
-    x86_64::instructions::interrupts::enable();
+    arch::init();
 }
 
 pub fn hlt_loop() -> ! {
@@ -59,14 +65,6 @@ pub fn test_runner(tests: &[&dyn Testable]) {
         test.run();
     }
     exit_qemu(QemuExitCode::Success);
-}
-
-#[cfg(test)]
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
-    init();
-    test_main();
-    hlt_loop();
 }
 
 #[cfg(test)]

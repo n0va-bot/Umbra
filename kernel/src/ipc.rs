@@ -234,28 +234,12 @@ impl IpcState {
         self.registry.recv(from)
     }
 
-    pub fn handle_kernel_call(&self, to: EndpointId, send_msg: &Message) -> Option<Message> {
-        match to.0 {
-            16 => self.handle_tick_call(send_msg),
-            _ => None,
-        }
+    pub fn handle_kernel_call(&self, _to: EndpointId, _send_msg: &Message) -> Option<Message> {
+        None
     }
 
-    pub fn handle_kernel_service(&self, to: EndpointId, _msg: &Message) -> bool {
-        match to.0 {
-            _ => false,
-        }
-    }
-
-    fn handle_tick_call(&self, msg: &Message) -> Option<Message> {
-        match msg.tag {
-            TICK_GET => {
-                let ticks = crate::interrupts::TICKS.load(core::sync::atomic::Ordering::Relaxed);
-                let bytes = ticks.to_le_bytes();
-                Some(Message::new(0, &bytes))
-            }
-            _ => None,
-        }
+    pub fn handle_kernel_service(&self, _to: EndpointId, _msg: &Message) -> bool {
+        false
     }
 }
 

@@ -8,21 +8,21 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use bootloader::{BootInfo, entry_point};
+use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use umbra::allocator::HEAP_SIZE;
 
 entry_point!(main);
 
-fn main(boot_info: &'static BootInfo) -> ! {
+fn main(boot_info: &'static mut BootInfo) -> ! {
     use umbra::allocator;
     use umbra::memory::{self, BootInfoFrameAllocator};
     use x86_64::VirtAddr;
 
     umbra::init();
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
-    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&mut boot_info.memory_regions) };
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
     test_main();

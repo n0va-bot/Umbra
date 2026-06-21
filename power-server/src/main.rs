@@ -71,7 +71,7 @@ pub extern "C" fn _start() -> ! {
             if msg.tag == 1 {
                 // POWER_OFF
                 unsafe { sys_outw(0xb004, 0x2000) };
-                
+
                 // QEMU ACPI PM1a control port is typically 0x604 on Q35
                 // We hardcode it here until we port full ACPI parsing to userspace
                 unsafe { sys_outw(0x604, 0x2000) };

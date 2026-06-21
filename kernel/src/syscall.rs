@@ -107,11 +107,7 @@ extern "C" fn syscall_dispatch(
         if current != 0 {
             let table = crate::process::PROCESSES.lock();
             if let Some(p) = table.get(current) {
-                for c in p.caps.iter() {
-                    if *c == Some(cap) {
-                        return true;
-                    }
-                }
+                return p.has_cap(&cap);
             }
         }
         false
@@ -144,6 +140,9 @@ extern "C" fn syscall_dispatch(
             let phys_addr = x86_64::PhysAddr::new(rdi);
             let virt_addr = x86_64::VirtAddr::new(rsi);
             let size = rdx as usize;
+            if !current_has_cap(crate::process::Cap::Frame(rdi, size)) {
+                return u64::MAX;
+            }
             match crate::process::map_physical_region(virt_addr, phys_addr, size) {
                 Ok(_) => 0,
                 Err(_) => u64::MAX,
@@ -255,6 +254,8 @@ extern "C" fn syscall_dispatch(
             let cap = match cap_type {
                 0 => crate::process::Cap::Port(cap_arg),
                 1 => crate::process::Cap::Irq(cap_arg as u8),
+                2 => crate::process::Cap::Endpoint(rdx as usize),
+                3 => crate::process::Cap::Frame(rdx as u64, core::u64::MAX as usize),
                 _ => return u64::MAX,
             };
 
@@ -272,6 +273,9 @@ extern "C" fn syscall_dispatch(
 
         100 => {
             let endpoint_id = rdi as usize;
+            if !current_has_cap(crate::process::Cap::Endpoint(endpoint_id)) {
+                return u64::MAX;
+            }
             let msg_ptr = rsi as *const crate::ipc::Message;
             let msg_vaddr = x86_64::VirtAddr::new(rsi);
             if crate::process::validate_user_range(
@@ -291,9 +295,6 @@ extern "C" fn syscall_dispatch(
             let endpoint_id = crate::ipc::EndpointId(endpoint_id);
 
             let mut ipc_state = crate::ipc::IPC.lock();
-            if ipc_state.handle_kernel_service(endpoint_id, msg) {
-                return 0;
-            }
             match ipc_state.send(endpoint_id, *msg) {
                 Ok(_) => {
                     drop(ipc_state);
@@ -306,6 +307,9 @@ extern "C" fn syscall_dispatch(
         }
         101 => {
             let endpoint_id = crate::ipc::EndpointId(rdi as usize);
+            if !current_has_cap(crate::process::Cap::Endpoint(rdi as usize)) {
+                return u64::MAX;
+            }
             let msg_ptr = rsi as *mut crate::ipc::Message;
             let msg_vaddr = x86_64::VirtAddr::new(rsi);
             if crate::process::validate_user_range(
@@ -354,6 +358,9 @@ extern "C" fn syscall_dispatch(
         }
         102 => {
             let endpoint_id = crate::ipc::EndpointId(rdi as usize);
+            if !current_has_cap(crate::process::Cap::Endpoint(rdi as usize)) {
+                return u64::MAX;
+            }
             let send_msg_ptr = rsi as *const crate::ipc::Message;
             let recv_msg_ptr = rdx as *mut crate::ipc::Message;
             let send_vaddr = x86_64::VirtAddr::new(rsi);
@@ -376,15 +383,6 @@ extern "C" fn syscall_dispatch(
             }
 
             let send_msg = unsafe { &*send_msg_ptr };
-
-            // Try to handle as a kernel service call first
-            {
-                let ipc_state = crate::ipc::IPC.lock();
-                if let Some(response_msg) = ipc_state.handle_kernel_call(endpoint_id, send_msg) {
-                    unsafe { *recv_msg_ptr = response_msg };
-                    return 0;
-                }
-            }
 
             // Not a kernel service or no response
             {
@@ -439,7 +437,18 @@ extern "C" fn syscall_dispatch(
                 .registry
                 .claim_endpoint(endpoint_id, Some(current))
             {
-                Ok(_) => 0,
+                Ok(_) => {
+                    let mut table = crate::process::PROCESSES.lock();
+                    if let Some(p) = table.get_mut(current) {
+                        for slot in p.caps.iter_mut() {
+                            if slot.is_none() {
+                                *slot = Some(crate::process::Cap::Endpoint(endpoint_id.0));
+                                break;
+                            }
+                        }
+                    }
+                    0
+                }
                 Err(_) => u64::MAX,
             }
         }
@@ -450,7 +459,18 @@ extern "C" fn syscall_dispatch(
             }
             let mut ipc_state = crate::ipc::IPC.lock();
             match ipc_state.create_endpoint(Some(current)) {
-                Some(id) => id.0 as u64,
+                Some(id) => {
+                    let mut table = crate::process::PROCESSES.lock();
+                    if let Some(p) = table.get_mut(current) {
+                        for slot in p.caps.iter_mut() {
+                            if slot.is_none() {
+                                *slot = Some(crate::process::Cap::Endpoint(id.0));
+                                break;
+                            }
+                        }
+                    }
+                    id.0 as u64
+                }
                 None => u64::MAX,
             }
         }

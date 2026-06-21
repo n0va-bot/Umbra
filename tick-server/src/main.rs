@@ -92,8 +92,12 @@ fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
                 0,
             )
         };
-        if result == 0 { return Ok(()); }
-        if result == u64::MAX { return Err(()); }
+        if result == 0 {
+            return Ok(());
+        }
+        if result == u64::MAX {
+            return Err(());
+        }
         unsafe { syscall(7, 0, 0, 0, 0, 0) };
     }
 }
