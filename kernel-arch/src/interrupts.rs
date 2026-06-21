@@ -62,7 +62,6 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     }
 }
 
-use crate::hlt_loop;
 use x86_64::structures::idt::PageFaultErrorCode;
 
 extern "x86-interrupt" fn page_fault_handler(
@@ -94,7 +93,7 @@ extern "x86-interrupt" fn page_fault_handler(
         }
     }
 
-    hlt_loop();
+    crate::hlt_loop();
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(
@@ -104,7 +103,7 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     crate::serial_println!("EXCEPTION: GENERAL PROTECTION FAULT");
     crate::serial_println!("Error Code: {:#X}", error_code);
     crate::serial_println!("{:#?}", stack_frame);
-    hlt_loop();
+    crate::hlt_loop();
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {

@@ -1,80 +1,7 @@
-use core::arch::naked_asm;
 use core::sync::atomic::Ordering;
-use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask, Star};
+use kernel_arch::syscall::{FB_INFO, SysFbInfo};
 
-pub fn init() {
-    unsafe {
-        Efer::update(|flags| flags.insert(EferFlags::SYSTEM_CALL_EXTENSIONS));
-
-        let kernel_cs = crate::gdt::get_kernel_code_selector();
-        let kernel_ds = crate::gdt::get_kernel_data_selector();
-
-        let user_cs = crate::gdt::get_user_code_selector();
-        let user_ds = crate::gdt::get_user_data_selector();
-
-        Star::write(user_cs, user_ds, kernel_cs, kernel_ds).unwrap();
-        LStar::write(x86_64::VirtAddr::new(syscall_entry as *const () as u64));
-        SFMask::write(x86_64::registers::rflags::RFlags::INTERRUPT_FLAG);
-    }
-}
-
-pub static mut USER_RSP_COPY: u64 = 0;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct SysFbInfo {
-    pub phys_addr: u64,
-    pub byte_len: usize,
-    pub width: usize,
-    pub height: usize,
-    pub pixel_format: u8,
-    pub bytes_per_pixel: usize,
-    pub stride: usize,
-}
-
-pub static FB_INFO: spin::Mutex<Option<SysFbInfo>> = spin::Mutex::new(None);
-
-#[unsafe(naked)]
-extern "C" fn syscall_entry() {
-    naked_asm!(
-        // Swap to process's kernel stack
-        "mov [rip + {user_rsp}], rsp",
-        "mov rsp, [rip + {kernel_rsp}]",
-
-        // Save registers (SysV)
-        "push r11",
-        "push rcx",
-        "push rdi",
-        "push rsi",
-        "push rdx",
-        "push r10",
-        "push r8",
-        "push r9",
-
-        "mov rcx, r10",
-        "mov r9, rax",
-        "call {dispatch}",
-
-        "pop r9",
-        "pop r8",
-        "pop r10",
-        "pop rdx",
-        "pop rsi",
-        "pop rdi",
-        "pop rcx",
-        "pop r11",
-
-        // Swap back to user stack
-        "mov rsp, [rip + {user_rsp}]",
-        "sysretq",
-
-        user_rsp = sym USER_RSP_COPY,
-        kernel_rsp = sym crate::process::KERNEL_RSP,
-        dispatch = sym syscall_dispatch,
-    );
-}
-
-extern "C" fn syscall_dispatch(
+pub extern "C" fn handle_syscall(
     rdi: u64,
     rsi: u64,
     rdx: u64,
@@ -82,7 +9,7 @@ extern "C" fn syscall_dispatch(
     _r8: u64,
     syscall_nr: u64,
 ) -> u64 {
-    if crate::interrupts::RESCHEDULE_NEEDED
+    if kernel_arch::interrupts::RESCHEDULE_NEEDED
         .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
         .is_ok()
     {
@@ -120,9 +47,9 @@ extern "C" fn syscall_dispatch(
         0 => {
             let b = rdi as u8;
             if b == b'\n' {
-                crate::serial_println!();
+                kernel_arch::serial_println!();
             } else {
-                crate::serial_print!("{}", b as char);
+                kernel_arch::serial_print!("{}", b as char);
             }
             0
         }
@@ -248,7 +175,7 @@ extern "C" fn syscall_dispatch(
                 return u64::MAX;
             }
             if irq < 16 {
-                crate::interrupts::IRQ_ENDPOINTS.lock()[irq as usize] = Some(endpoint_id);
+                kernel_arch::interrupts::IRQ_ENDPOINTS.lock()[irq as usize] = Some(endpoint_id);
                 0
             } else {
                 u64::MAX
@@ -293,7 +220,7 @@ extern "C" fn syscall_dispatch(
             )
             .is_none()
             {
-                crate::serial_println!(
+                kernel_arch::serial_println!(
                     "[syscall] 100: rejected invalid message pointer {:#X}",
                     rsi
                 );
@@ -327,7 +254,7 @@ extern "C" fn syscall_dispatch(
             )
             .is_none()
             {
-                crate::serial_println!(
+                kernel_arch::serial_println!(
                     "[syscall] 101: rejected invalid message pointer {:#X}",
                     rsi
                 );
@@ -377,14 +304,14 @@ extern "C" fn syscall_dispatch(
             let msg_size = core::mem::size_of::<crate::ipc::Message>();
 
             if crate::process::validate_user_range(send_vaddr, msg_size).is_none() {
-                crate::serial_println!(
+                kernel_arch::serial_println!(
                     "[syscall] 102: rejected invalid send message pointer {:#X}",
                     rsi
                 );
                 return u64::MAX;
             }
             if crate::process::validate_user_range(recv_vaddr, msg_size).is_none() {
-                crate::serial_println!(
+                kernel_arch::serial_println!(
                     "[syscall] 102: rejected invalid recv message pointer {:#X}",
                     rdx
                 );
@@ -499,12 +426,12 @@ extern "C" fn syscall_dispatch(
             }
             let name_bytes = unsafe { core::slice::from_raw_parts(rdi as *const u8, name_len) };
             if let Ok(name) = core::str::from_utf8(name_bytes) {
-                let initramfs = crate::memory::INITRAMFS.lock();
+                let initramfs = kernel_arch::memory::INITRAMFS.lock();
                 if let Some(ramdisk) = *initramfs {
                     let archive = crate::tar::TarArchive::new(ramdisk);
                     for entry in archive.iter() {
                         if entry.name == name && entry.size > 0 {
-                            let mut allocator_guard = crate::memory::FRAME_ALLOCATOR.lock();
+                            let mut allocator_guard = kernel_arch::memory::FRAME_ALLOCATOR.lock();
                             if let Some(allocator) = allocator_guard.as_mut() {
                                 let pid = crate::process::spawn(entry.data, allocator);
                                 return pid as u64;

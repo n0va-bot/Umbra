@@ -5,7 +5,7 @@ use x86_64::structures::paging::{
 use xmas_elf::ElfFile;
 use xmas_elf::program::Type;
 
-use crate::memory::BootInfoFrameAllocator;
+use kernel_arch::memory::BootInfoFrameAllocator;
 
 pub fn load_elf(
     elf_bytes: &[u8],
@@ -66,9 +66,9 @@ pub fn load_elf_into(
     mapper: &mut OffsetPageTable,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) -> u64 {
-    let phys_mem_offset = crate::memory::get_phys_mem_offset();
+    let phys_mem_offset = kernel_arch::memory::get_phys_mem_offset();
 
-    crate::serial_println!(
+    kernel_arch::serial_println!(
         "[load_elf_into] First 4 bytes: {:x?} (should be 7f 45 4c 46)",
         &elf_bytes[0..4]
     );
@@ -84,7 +84,7 @@ pub fn load_elf_into(
         let file_offset = header.offset() as usize;
         let file_size = header.file_size() as usize;
 
-        crate::serial_println!(
+        kernel_arch::serial_println!(
             "[load_elf_into] virt_start: {:#x}, file_offset: {:#x}, file_size: {:#x}, mem_size: {:#x}",
             virt_start,
             file_offset,

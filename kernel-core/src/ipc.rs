@@ -236,7 +236,7 @@ impl IpcState {
 
     pub fn handle_kernel_call(&self, to: EndpointId, send_msg: &Message) -> Option<Message> {
         if to == RAW_TICK && send_msg.tag == TICK_GET {
-            let ticks = crate::interrupts::TICKS.load(core::sync::atomic::Ordering::Relaxed) as u64;
+            let ticks = kernel_arch::interrupts::TICKS.load(core::sync::atomic::Ordering::Relaxed) as u64;
             let mut reply = Message::empty();
             reply.tag = TICK_GET;
             reply.data[0..8].copy_from_slice(&ticks.to_le_bytes());

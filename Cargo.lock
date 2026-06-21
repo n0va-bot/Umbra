@@ -333,6 +333,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel-arch"
+version = "0.1.0"
+dependencies = [
+ "acpi",
+ "bootloader_api",
+ "conquer-once",
+ "crossbeam-queue",
+ "lazy_static",
+ "pc-keyboard",
+ "pic8259",
+ "spin 0.5.2",
+ "uart_16550",
+ "volatile 0.2.7",
+ "x86_64",
+]
+
+[[package]]
+name = "kernel-core"
+version = "0.1.0"
+dependencies = [
+ "bootloader_api",
+ "crossbeam-queue",
+ "futures-util",
+ "kernel-arch",
+ "lazy_static",
+ "linked_list_allocator",
+ "spin 0.5.2",
+ "x86_64",
+ "xmas-elf",
+]
+
+[[package]]
+name = "kernel-hal"
+version = "0.1.0"
+
+[[package]]
 name = "keyboard-server"
 version = "0.1.0"
 dependencies = [
@@ -359,6 +395,10 @@ name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
+
+[[package]]
+name = "libumbra"
+version = "0.1.0"
 
 [[package]]
 name = "linked_list_allocator"
@@ -702,6 +742,9 @@ dependencies = [
  "conquer-once",
  "crossbeam-queue",
  "futures-util",
+ "kernel-arch",
+ "kernel-core",
+ "kernel-hal",
  "lazy_static",
  "linked_list_allocator",
  "pc-keyboard",

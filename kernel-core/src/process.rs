@@ -9,7 +9,7 @@ use x86_64::structures::paging::{
 };
 use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTable};
 
-use crate::memory::BootInfoFrameAllocator;
+use kernel_arch::memory::BootInfoFrameAllocator;
 
 const KERNEL_STACK_PAGES: usize = 16;
 pub const MAX_PROCESSES: usize = 16;
@@ -205,8 +205,8 @@ impl ProcessTable {
 pub static PROCESSES: Mutex<ProcessTable> = Mutex::new(ProcessTable::new());
 
 pub fn schedule(after_idx: usize) -> Option<usize> {
-    while let Some(irq) = crate::interrupts::PENDING_IRQS.pop() {
-        let endpoint = crate::interrupts::IRQ_ENDPOINTS.lock()[irq as usize];
+    while let Some(irq) = kernel_arch::interrupts::PENDING_IRQS.pop() {
+        let endpoint = kernel_arch::interrupts::IRQ_ENDPOINTS.lock()[irq as usize];
         if let Some(ep_id) = endpoint {
             let ep = crate::ipc::EndpointId(ep_id);
             let msg = crate::ipc::Message::new(0xFFFFFFFF, &[irq]);
@@ -242,7 +242,7 @@ pub fn wake_blocked_on_endpoint(endpoint_id: usize) {
         }
     }
     if woken {
-        crate::interrupts::RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
+        kernel_arch::interrupts::RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
     }
 }
 
@@ -272,7 +272,6 @@ pub extern "C" fn context_switch(_old_rsp_out: *mut u64, _new_rsp: u64) {
     )
 }
 
-pub static mut KERNEL_RSP: u64 = 0;
 pub static CURRENT_PROCESS: AtomicUsize = AtomicUsize::new(0);
 
 pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
@@ -285,12 +284,12 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
         let mut table = PROCESSES.lock();
         if let Some(old_proc) = table.get_mut(old_idx) {
             unsafe {
-                old_proc.user_rsp = crate::syscall::USER_RSP_COPY;
+                old_proc.user_rsp = kernel_arch::syscall::USER_RSP_COPY;
             }
         }
         let new_proc = table.get(new_idx).expect("switch_to: invalid new_idx");
         unsafe {
-            crate::syscall::USER_RSP_COPY = new_proc.user_rsp;
+            kernel_arch::syscall::USER_RSP_COPY = new_proc.user_rsp;
         }
 
         new_cr3 = new_proc.cr3;
@@ -307,9 +306,9 @@ pub unsafe fn switch_to(old_idx: usize, new_idx: usize) {
     CURRENT_PROCESS.store(new_idx, Ordering::SeqCst);
 
     unsafe {
-        KERNEL_RSP = new_kernel_stack_top.as_u64();
+        kernel_arch::syscall::KERNEL_RSP = new_kernel_stack_top.as_u64();
     }
-    crate::gdt::set_kernel_rsp0(new_kernel_stack_top);
+    kernel_arch::gdt::set_kernel_rsp0(new_kernel_stack_top);
     unsafe {
         Cr3::write(PhysFrame::containing_address(new_cr3), Cr3Flags::empty());
     }
@@ -360,9 +359,9 @@ pub unsafe fn setup_first_dispatch(
 const USER_STACK_TOP: u64 = 0x5555_0000_0000 + 4096;
 
 pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4KiB>) -> usize {
-    let new_cr3 = unsafe { crate::memory::clone_kernel_pml4(frame_allocator) };
+    let new_cr3 = unsafe { kernel_arch::memory::clone_kernel_pml4(frame_allocator) };
 
-    let mut mapper = unsafe { crate::memory::create_mapper_for_pml4(new_cr3) };
+    let mut mapper = unsafe { kernel_arch::memory::create_mapper_for_pml4(new_cr3) };
 
     let entry_point = crate::elf_loader::load_elf_into(elf_bytes, &mut mapper, frame_allocator);
 
@@ -381,8 +380,8 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
 
     let (kernel_stack_slot, kernel_stack_top) = allocate_kernel_stack();
 
-    let user_cs = crate::gdt::get_user_code_selector().0 as u64 | 3;
-    let user_ss = crate::gdt::get_user_data_selector().0 as u64 | 3;
+    let user_cs = kernel_arch::gdt::get_user_code_selector().0 as u64 | 3;
+    let user_ss = kernel_arch::gdt::get_user_data_selector().0 as u64 | 3;
     const RFLAGS_IF: u64 = 1 << 9;
 
     let kernel_rsp = unsafe {
@@ -412,7 +411,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
     };
 
     let index = PROCESSES.lock().insert(process);
-    crate::serial_println!(
+    kernel_arch::serial_println!(
         "[process] spawned PID {} at index {} (CR3={:#X}, entry={:#X}, kstack_slot={})",
         pid.0,
         index,
@@ -426,7 +425,7 @@ pub fn spawn(elf_bytes: &[u8], frame_allocator: &mut impl FrameAllocator<Size4Ki
 pub fn exit(index: usize) {
     let mut table = PROCESSES.lock();
     if let Some(proc) = table.get_mut(index) {
-        crate::serial_println!("[process] PID {} exited", proc.pid.0);
+        kernel_arch::serial_println!("[process] PID {} exited", proc.pid.0);
         proc.state = State::Exited;
     }
 }
@@ -451,7 +450,7 @@ pub fn teardown(index: usize, frame_allocator: &mut BootInfoFrameAllocator) {
     deallocate_user_tables(PhysFrame::containing_address(cr3), frame_allocator);
 
     free_kernel_stack(slot);
-    crate::serial_println!(
+    kernel_arch::serial_println!(
         "[process] tore down slot {} (kernel stack slot {}, PML4 {:#X})",
         index,
         slot,
@@ -483,7 +482,7 @@ pub fn teardown_exited(frame_allocator: &mut BootInfoFrameAllocator) {
 fn deallocate_user_tables(pml4_frame: PhysFrame, frame_allocator: &mut BootInfoFrameAllocator) {
     use x86_64::structures::paging::page_table::FrameError;
 
-    let offset = crate::memory::get_phys_mem_offset();
+    let offset = kernel_arch::memory::get_phys_mem_offset();
     let pml4_virt = offset + pml4_frame.start_address().as_u64();
     let pml4 = unsafe { &*(pml4_virt.as_ptr() as *const PageTable) };
 
@@ -580,7 +579,7 @@ pub fn validate_user_ptr(vaddr: VirtAddr) -> Option<PhysAddr> {
         table.get(current)?.cr3
     };
 
-    let offset = crate::memory::get_phys_mem_offset();
+    let offset = kernel_arch::memory::get_phys_mem_offset();
     let table_indexes = [
         vaddr.p4_index(),
         vaddr.p3_index(),
@@ -636,7 +635,7 @@ pub fn map_physical_region(vaddr: VirtAddr, paddr: PhysAddr, size: usize) -> Res
         table.get(current).map(|p| p.cr3).ok_or(())?
     };
 
-    let mut mapper = unsafe { crate::memory::create_mapper_for_pml4(cr3) };
+    let mut mapper = unsafe { kernel_arch::memory::create_mapper_for_pml4(cr3) };
 
     let flags = PageTableFlags::PRESENT
         | PageTableFlags::WRITABLE
@@ -648,7 +647,7 @@ pub fn map_physical_region(vaddr: VirtAddr, paddr: PhysAddr, size: usize) -> Res
 
     let mut frame = PhysFrame::<Size4KiB>::containing_address(paddr);
 
-    let mut allocator_guard = crate::memory::FRAME_ALLOCATOR.lock();
+    let mut allocator_guard = kernel_arch::memory::FRAME_ALLOCATOR.lock();
     let allocator = allocator_guard.as_mut().ok_or(())?;
 
     for page in Page::range_inclusive(start_page, end_page) {
@@ -695,21 +694,21 @@ pub fn init(ramdisk_addr: u64, ramdisk_len: usize) -> usize {
 
     let archive = crate::tar::TarArchive::new(ramdisk);
     for entry in archive.iter() {
-        crate::serial_println!(
+        kernel_arch::serial_println!(
             "[kernel] found in initramfs: {}, size: {}",
             entry.name,
             entry.size
         );
         if entry.size > 0 && entry.name == "SerV" {
-            let mut allocator_guard = crate::memory::FRAME_ALLOCATOR.lock();
+            let mut allocator_guard = kernel_arch::memory::FRAME_ALLOCATOR.lock();
             let allocator = allocator_guard.as_mut().unwrap();
             spawn(entry.data, allocator);
-            crate::serial_println!("[kernel] {} spawned", entry.name);
+            kernel_arch::serial_println!("[kernel] {} spawned", entry.name);
             break;
         }
     }
 
-    *crate::memory::INITRAMFS.lock() = Some(ramdisk);
+    *kernel_arch::memory::INITRAMFS.lock() = Some(ramdisk);
 
     kernel_index
 }

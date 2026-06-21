@@ -2,6 +2,7 @@
 members = [
     "kernel",
     "userspace",
+    "userspace/libumbra",
     "builder",
     "keyboard-server",
     "tick-server",
@@ -9,7 +10,7 @@ members = [
     "fb-server",
     "rtc-server",
     "pci-server",
-    "power-server",
+    "power-server", "kernel-hal", "kernel-arch", "kernel-core",
 ]
 default-members = ["builder"]
 resolver = "2"

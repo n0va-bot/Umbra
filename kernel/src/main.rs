@@ -4,6 +4,10 @@
 #![test_runner(umbra::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+#[macro_use]
+extern crate kernel_arch;
+extern crate kernel_core;
+
 extern crate alloc;
 
 use bootloader_api::config::{BootloaderConfig, Mapping};
@@ -27,11 +31,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // (start, co robi, każdy widzi)
     // (koń, jaki jest, każdy widzi)
 
-    umbra::serial_println!("[kernel] entered kernel_main");
+    serial_println!("[kernel] entered kernel_main");
 
     let framebuffer = boot_info.framebuffer.as_mut().unwrap();
     let info = framebuffer.info();
-    umbra::serial_println!(
+    serial_println!(
         "[kernel] framebuffer: {}x{}, {:?}, bpp={}",
         info.width,
         info.height,
@@ -42,7 +46,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
 
     umbra::arch::init();
-    umbra::serial_println!("[kernel] init done");
+    serial_println!("[kernel] init done");
 
     let fb_vaddr = VirtAddr::new(framebuffer.buffer().as_ptr() as u64);
     let fb_paddr = unsafe { umbra::memory::translate_addr(fb_vaddr, phys_mem_offset).unwrap() };
@@ -60,7 +64,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         bytes_per_pixel: info.bytes_per_pixel,
         stride: info.stride,
     });
-    umbra::serial_println!(
+    serial_println!(
         "[kernel] framebuffer info saved (paddr: {:#X})",
         fb_paddr.as_u64()
     );
@@ -71,13 +75,29 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .expect("No ramdisk found");
     let ramdisk_len = boot_info.ramdisk_len as usize;
 
-    let mut _mapper = unsafe { umbra::memory::init_all(boot_info) };
+    let mut mapper = unsafe { umbra::memory::init_all(boot_info) };
+    
+    // Initialize the heap allocator
+    {
+        let mut frame_allocator_guard = umbra::memory::FRAME_ALLOCATOR.lock();
+        let frame_allocator = frame_allocator_guard.as_mut().unwrap();
+        umbra::allocator::init_heap(&mut mapper, frame_allocator)
+            .expect("Failed to initialize heap");
+    }
 
     umbra::acpi::init(phys_mem_offset.as_u64());
-    umbra::serial_println!("[kernel] acpi initialized");
+    serial_println!("[kernel] acpi initialized");
     umbra::syscall::init();
+    
+    // Set the syscall handler to kernel-core's handle_syscall
+    use core::sync::atomic::Ordering;
+    kernel_arch::syscall::SYSCALL_HANDLER.store(
+        kernel_core::syscall::handle_syscall as usize,
+        Ordering::SeqCst
+    );
+    
     umbra::ipc::init();
-    umbra::serial_println!("[kernel] ipc initialized");
+    serial_println!("[kernel] ipc initialized");
 
     let kernel_index = umbra::process::init(ramdisk_addr, ramdisk_len);
 
@@ -119,15 +139,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[cfg(test)]
     test_main();
-
-    let mut executor = Executor::new();
 }
 
 // This function is called on panic (yes, I'm even copying the comments)
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    umbra::serial_println!("[PANIC] {}", info);
+    serial_println!("[PANIC] {}", info);
     umbra::hlt_loop();
 }
 

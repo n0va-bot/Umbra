@@ -9,27 +9,35 @@ use core::panic::PanicInfo;
 
 extern crate alloc;
 
-pub mod acpi;
-pub mod allocator;
-pub mod cmos;
-pub mod elf_loader;
-pub mod gdt;
-pub mod interrupts;
-pub mod ipc;
-pub mod memory;
-pub mod pci;
-pub mod process;
-pub mod serial;
-pub mod syscall;
-pub mod tar;
-pub mod task;
-pub mod userspace;
+// Import macros
+#[macro_use]
+extern crate kernel_arch;
+
+// Re-export from kernel-arch
+pub use kernel_arch::acpi;
+pub use kernel_arch::cmos;
+pub use kernel_arch::gdt;
+pub use kernel_arch::interrupts;
+pub use kernel_arch::memory;
+pub use kernel_arch::pci;
+pub use kernel_arch::serial;
+pub use kernel_arch::syscall;
+pub use kernel_arch::userspace;
+
+// Re-export from kernel-core
+pub use kernel_core::allocator;
+pub use kernel_core::elf_loader;
+pub use kernel_core::ipc;
+pub use kernel_core::process;
+pub use kernel_core::syscall as core_syscall;
+pub use kernel_core::tar;
+pub use kernel_core::task;
 
 pub mod arch {
     pub fn init() {
-        crate::gdt::init();
-        crate::interrupts::init_idt();
-        unsafe { crate::interrupts::PICS.lock().initialize() };
+        kernel_arch::gdt::init();
+        kernel_arch::interrupts::init_idt();
+        unsafe { kernel_arch::interrupts::PICS.lock().initialize() };
         x86_64::instructions::interrupts::enable();
     }
 }

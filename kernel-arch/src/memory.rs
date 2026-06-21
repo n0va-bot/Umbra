@@ -86,11 +86,6 @@ pub unsafe fn init_all(
     let mut mapper = unsafe { init(phys_mem_offset) };
     let mut frame_allocator =
         unsafe { BootInfoFrameAllocator::init(&mut boot_info.memory_regions) };
-
-    crate::allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("heap initialization failed");
-    crate::serial_println!("[kernel] heap initialized");
-
     *FRAME_ALLOCATOR.lock() = Some(frame_allocator);
 
     store_phys_mem_offset(phys_mem_offset);
