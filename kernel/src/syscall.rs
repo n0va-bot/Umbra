@@ -86,16 +86,19 @@ extern "C" fn syscall_dispatch(
         .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
         .is_ok()
     {
-        let pending = crate::interrupts::PENDING_NEXT.swap(usize::MAX, Ordering::AcqRel);
         let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
-        if current != 0 && pending != usize::MAX && pending != current {
-            {
-                let mut table = crate::process::PROCESSES.lock();
-                if let Some(p) = table.get_mut(current) {
-                    p.state = crate::process::State::Ready;
+        if let Some(next) = crate::process::schedule(current) {
+            if next != current {
+                if current != 0 {
+                    let mut table = crate::process::PROCESSES.lock();
+                    if let Some(p) = table.get_mut(current) {
+                        if p.state == crate::process::State::Running {
+                            p.state = crate::process::State::Ready;
+                        }
+                    }
                 }
+                unsafe { crate::process::switch_to(current, next) };
             }
-            unsafe { crate::process::switch_to(current, pending) };
         }
     }
 
@@ -114,6 +117,15 @@ extern "C" fn syscall_dispatch(
     }
 
     match syscall_nr {
+        0 => {
+            let b = rdi as u8;
+            if b == b'\n' {
+                crate::serial_println!();
+            } else {
+                crate::serial_print!("{}", b as char);
+            }
+            0
+        }
         7 => {
             let current = crate::process::CURRENT_PROCESS.load(Ordering::SeqCst);
             if current != 0 {
@@ -273,9 +285,6 @@ extern "C" fn syscall_dispatch(
 
         100 => {
             let endpoint_id = rdi as usize;
-            if !current_has_cap(crate::process::Cap::Endpoint(endpoint_id)) {
-                return u64::MAX;
-            }
             let msg_ptr = rsi as *const crate::ipc::Message;
             let msg_vaddr = x86_64::VirtAddr::new(rsi);
             if crate::process::validate_user_range(
@@ -383,6 +392,11 @@ extern "C" fn syscall_dispatch(
             }
 
             let send_msg = unsafe { &*send_msg_ptr };
+
+            if let Some(reply) = crate::ipc::IPC.lock().handle_kernel_call(endpoint_id, send_msg) {
+                unsafe { *recv_msg_ptr = reply };
+                return 0;
+            }
 
             // Not a kernel service or no response
             {

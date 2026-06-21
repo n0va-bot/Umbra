@@ -66,6 +66,25 @@ fn create_endpoint() -> Option<usize> {
     }
 }
 
+struct Stdout;
+impl core::fmt::Write for Stdout {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for byte in s.bytes() {
+            unsafe { syscall(0, byte as u64, 0, 0, 0, 0) };
+        }
+        Ok(())
+    }
+}
+macro_rules! serial_print {
+    ($($arg:tt)*) => {
+        let _ = core::fmt::Write::write_fmt(&mut Stdout, format_args!($($arg)*));
+    };
+}
+macro_rules! serial_println {
+    () => (serial_print!("\n"));
+    ($($arg:tt)*) => (serial_print!("{}\n", format_args!($($arg)*)));
+}
+
 fn ipc_recv(endpoint: usize, msg: &mut Message) -> Result<(), ()> {
     let result = unsafe {
         syscall(
@@ -124,7 +143,7 @@ pub extern "C" fn _start() -> ! {
 
                 let req = Message::new(TICK_GET, &[]);
                 let mut resp = Message::empty();
-                if unsafe {
+                let res = unsafe {
                     syscall(
                         SYS_IPC_CALL,
                         RAW_TICK as u64,
@@ -133,8 +152,8 @@ pub extern "C" fn _start() -> ! {
                         0,
                         0,
                     )
-                } == 0
-                {
+                };
+                if res == 0 {
                     let mut reply = Message::empty();
                     reply.tag = TICK_GET;
                     reply.data[0..8].copy_from_slice(&resp.data[0..8]);

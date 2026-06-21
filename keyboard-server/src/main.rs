@@ -56,6 +56,25 @@ unsafe fn syscall(n: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64)
     ret
 }
 
+struct Stdout;
+impl core::fmt::Write for Stdout {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for byte in s.bytes() {
+            unsafe { syscall(0, byte as u64, 0, 0, 0, 0) };
+        }
+        Ok(())
+    }
+}
+macro_rules! print {
+    ($($arg:tt)*) => {
+        let _ = core::fmt::Write::write_fmt(&mut Stdout, format_args!($($arg)*));
+    };
+}
+macro_rules! println {
+    () => (print!("\n"));
+    ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
+}
+
 fn create_endpoint() -> Option<usize> {
     let result = unsafe { syscall(SYS_IPC_CREATE_ENDPOINT, 0, 0, 0, 0, 0) };
     if result == u64::MAX {
@@ -146,6 +165,7 @@ pub extern "C" fn _start() -> ! {
         if ipc_recv(my_endpoint, &mut msg).is_ok() {
             if msg.tag == IRQ_MESSAGE_TAG {
                 // IRQ fired, read port 0x64 until empty
+                println!("[kb-server] IRQ received!");
                 while sys_inb(0x64) & 1 == 1 {
                     let scancode = sys_inb(0x60);
                     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
@@ -161,6 +181,7 @@ pub extern "C" fn _start() -> ! {
                             }
 
                             if char_code != 0 {
+                                println!("[kb-server] key: {}", char_code);
                                 if let Some((endpoint, reply_tag)) = pending_reply.take() {
                                     let mut reply = Message::empty();
                                     reply.tag = reply_tag;

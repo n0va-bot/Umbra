@@ -39,7 +39,6 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 pub static RESCHEDULE_NEEDED: AtomicBool = AtomicBool::new(false);
-pub static PENDING_NEXT: AtomicUsize = AtomicUsize::new(usize::MAX);
 pub static TICKS: AtomicUsize = AtomicUsize::new(0);
 
 pub static IRQ_ENDPOINTS: spin::Mutex<[Option<usize>; 16]> = spin::Mutex::new([None; 16]);
@@ -53,14 +52,8 @@ const TIME_QUANTUM: u64 = 100;
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
     let ticks = TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) as u64;
 
-    let current = crate::process::CURRENT_PROCESS.load(core::sync::atomic::Ordering::SeqCst);
-    if current != 0 && ticks > 0 && ticks % TIME_QUANTUM == 0 {
-        if let Some(next_idx) = crate::process::schedule(current) {
-            if next_idx != current {
-                PENDING_NEXT.store(next_idx, core::sync::atomic::Ordering::Release);
-                RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
-            }
-        }
+    if ticks > 0 && ticks % TIME_QUANTUM == 0 {
+        RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
     }
 
     unsafe {

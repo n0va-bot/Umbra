@@ -41,6 +41,19 @@ pub fn init() {
 pub fn hlt_loop() -> ! {
     loop {
         x86_64::instructions::hlt();
+        if crate::interrupts::RESCHEDULE_NEEDED
+            .compare_exchange(
+                true,
+                false,
+                core::sync::atomic::Ordering::AcqRel,
+                core::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            if let Some(next) = crate::process::schedule(0) {
+                unsafe { crate::process::switch_to(0, next) };
+            }
+        }
     }
 }
 

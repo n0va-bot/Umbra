@@ -231,13 +231,18 @@ pub fn schedule(after_idx: usize) -> Option<usize> {
 
 pub fn wake_blocked_on_endpoint(endpoint_id: usize) {
     let mut table = PROCESSES.lock();
+    let mut woken = false;
     for idx in 0..MAX_PROCESSES {
         if let Some(proc) = table.get_mut(idx) {
             if proc.state == State::Blocked && proc.blocked_on_endpoint == Some(endpoint_id) {
                 proc.state = State::Ready;
                 proc.blocked_on_endpoint = None;
+                woken = true;
             }
         }
+    }
+    if woken {
+        crate::interrupts::RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
     }
 }
 

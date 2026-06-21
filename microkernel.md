@@ -139,12 +139,12 @@
 > `userspace/libumbra`, per-service userspace binaries.
 
 - [x] Workspace with `kernel`, `userspace`, `builder` crates
-- [ ] `kernel-arch` (or `kernel/arch/x86_64`) — GDT, IDT, syscall entry, context switch, port-I/O traps
-- [ ] `kernel-core` — process table, scheduler, IPC, capability table, page-table management
-- [ ] `kernel-hal` — minimal traits (clock, frame allocator)
-- [ ] `kernel` — thin binary wiring boot only
-- [ ] `userspace/libumbra` — shared `cap`, `ipc`, `process::spawn` helpers
-- [ ] `userspace/{shell,fb-server,rtc,pci-arbiter,ps2-kbd,power}` — one binary each
+- [ ] (Deferred) `kernel-arch` (or `kernel/arch/x86_64`) — GDT, IDT, syscall entry, context switch, port-I/O traps
+- [ ] (Deferred) `kernel-core` — process table, scheduler, IPC, capability table, page-table management
+- [ ] (Deferred) `kernel-hal` — minimal traits (clock, frame allocator)
+- [ ] (Deferred) `kernel` — thin binary wiring boot only
+- [ ] (Deferred) `userspace/libumbra` — shared `cap`, `ipc`, `process::spawn` helpers
+- [ ] (Deferred) `userspace/{shell,fb-server,rtc,pci-arbiter,ps2-kbd,power}` — one binary each
 
 ---
 

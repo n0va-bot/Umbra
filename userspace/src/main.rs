@@ -115,6 +115,25 @@ fn ipc_send(endpoint: usize, msg: &Message) -> Result<(), ()> {
     }
 }
 
+struct SerialOut;
+impl core::fmt::Write for SerialOut {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for byte in s.bytes() {
+            unsafe { syscall(0, byte as u64, 0, 0, 0, 0) };
+        }
+        Ok(())
+    }
+}
+macro_rules! serial_print {
+    ($($arg:tt)*) => {
+        let _ = core::fmt::Write::write_fmt(&mut crate::SerialOut, format_args!($($arg)*));
+    };
+}
+macro_rules! serial_println {
+    () => (serial_print!("\n"));
+    ($($arg:tt)*) => (serial_print!("{}\n", format_args!($($arg)*)));
+}
+
 fn lookup_service(name: &str, reply_endpoint: usize) -> Option<usize> {
     let mut req = Message::empty();
     req.tag = 2; // LOOKUP_SERVICE

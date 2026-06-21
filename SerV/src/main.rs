@@ -105,8 +105,7 @@ struct Stdout;
 impl core::fmt::Write for Stdout {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for byte in s.bytes() {
-            let msg = Message::new(FB_WRITE_CHAR, &[byte]);
-            let _ = ipc_send(FB_SERVER, &msg);
+            unsafe { syscall(0, byte as u64, 0, 0, 0, 0) };
         }
         Ok(())
     }
