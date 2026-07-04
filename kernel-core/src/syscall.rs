@@ -320,7 +320,10 @@ pub extern "C" fn handle_syscall(
 
             let send_msg = unsafe { &*send_msg_ptr };
 
-            if let Some(reply) = crate::ipc::IPC.lock().handle_kernel_call(endpoint_id, send_msg) {
+            if let Some(reply) = crate::ipc::IPC
+                .lock()
+                .handle_kernel_call(endpoint_id, send_msg)
+            {
                 unsafe { *recv_msg_ptr = reply };
                 return 0;
             }

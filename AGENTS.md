@@ -66,7 +66,7 @@ Tests **run inside QEMU**, not natively. Uses custom test framework with serial 
 - **Never use `println!` in test panic handlers** — tests use `serial_print!`/`serial_println!`
 - **Cargo.lock must be committed** (it is checked in)
 - **No CI, no Makefile, no pre-commit hooks**
-- **Do NOT do things for the user, teach, explain, guide, but don't do things yourself.** You can provide snippets and help out sometimes, but don't act on your own.
 - **To push, use the ./push script**
 - **[ ] means task not completed, [X] means task completed, [/] means task in progress**
 - **If a write/file creation operation fails because the file already exists, edit the file instead of removing and rewriting it**
+- **THERE IS NO SUCH THING AS 'ACCEPTABLE FOR A HOBBY OS'**

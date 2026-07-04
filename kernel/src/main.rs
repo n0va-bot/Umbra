@@ -76,7 +76,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let ramdisk_len = boot_info.ramdisk_len as usize;
 
     let mut mapper = unsafe { umbra::memory::init_all(boot_info) };
-    
+
     // Initialize the heap allocator
     {
         let mut frame_allocator_guard = umbra::memory::FRAME_ALLOCATOR.lock();
@@ -88,14 +88,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     umbra::acpi::init(phys_mem_offset.as_u64());
     serial_println!("[kernel] acpi initialized");
     umbra::syscall::init();
-    
+
     // Set the syscall handler to kernel-core's handle_syscall
     use core::sync::atomic::Ordering;
     kernel_arch::syscall::SYSCALL_HANDLER.store(
         kernel_core::syscall::handle_syscall as usize,
-        Ordering::SeqCst
+        Ordering::SeqCst,
     );
-    
+
     umbra::ipc::init();
     serial_println!("[kernel] ipc initialized");
 

@@ -242,7 +242,8 @@ pub fn wake_blocked_on_endpoint(endpoint_id: usize) {
         }
     }
     if woken {
-        kernel_arch::interrupts::RESCHEDULE_NEEDED.store(true, core::sync::atomic::Ordering::Release);
+        kernel_arch::interrupts::RESCHEDULE_NEEDED
+            .store(true, core::sync::atomic::Ordering::Release);
     }
 }
 
